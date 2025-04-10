@@ -79,3 +79,30 @@ Namespace extraction						✅					Handles SSIS-specific namespaces
 
 Libraries Needed
 Make sure environment has : pip install pandas openpyxl pyodbc
+
+New Functionality Added:
+Tasks + Containers + Executables Parsing
+
+Handles all SSIS executables including:
+
+	Sequence
+
+	ForEachLoop
+
+	ForLoop
+
+	Regular SSIS Tasks
+
+Precedence Constraints (Control Flow Paths)
+	Maps control flow between tasks using From and To DTSIDs
+
+	Supports Success, Failure, Completion, Expression
+
+Key Enhancements Made:
+	Used a dictionary to map executable IDs to names
+
+	Flattened nested executables into a clean structure
+
+	Gracefully handles missing attributes
+
+	Added everything to a results list (easy to export)
