@@ -1,8 +1,8 @@
-## I’ve reviewed the uploaded C# code and fully understand the goal: 
+I’ve reviewed the uploaded C# code and fully understand the goal: 
 convert the SSIS Package Analyzer from C# to a clean, 
 optimized Python implementation that aligns with modern coding standards and is easy to maintain.
 
-## Scope Covered in the C# Code:
+Scope Covered in the C# Code:
 	1.Package Scanning: Traverse folders to find .dtsx, .conmgr, and .params files.
 
 	2.XML Parsing: Extract metadata like:
