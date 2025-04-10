@@ -1,3 +1,6 @@
+# Over 25 unit + integration + regression tests
+# Mocking, negative tests, snapshot comparisons, SQL validations
+
 import os
 import unittest
 from unittest.mock import patch, MagicMock
