@@ -67,14 +67,14 @@ Enhancements While Converting:
 
 Features Implemented from  C# Code
 
-		Feature						Converted to Python					Notes
-DTSX traversal (folder scan)				✅					Uses os.walk
-Variable extraction							✅					Reads all <DTS:Variable>
-Parameter manager (.params)					✅				    Maps data types to readable names
-Connection manager (.conmgr)				✅					Extracts connection string, expressions
-Output to Excel								✅					Uses pandas
+		Feature					Converted to Python					 Notes
+DTSX traversal (folder scan)					✅					Uses os.walk
+Variable extraction						✅					Reads all <DTS:Variable>
+Parameter manager (.params)					✅				        Maps data types to readable names
+Connection manager (.conmgr)					✅					Extracts connection string, expressions
+Output to Excel							✅					Uses pandas
 Output to SQL Server						✅					Uses pyodbc (needs installing)
-Error handling								✅					With traceback
+Error handling							✅					With traceback
 Namespace extraction						✅					Handles SSIS-specific namespaces
 
 Libraries Needed
