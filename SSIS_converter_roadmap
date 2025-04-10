@@ -106,3 +106,41 @@ Key Enhancements Made:
 	Gracefully handles missing attributes
 
 	Added everything to a results list (easy to export)
+	
+What Was Just Added:
+	Feature							Description
+Event Handlers				Extracts handlers like OnError, OnPostExecute, etc., from the package
+Parent Mapping				Links event handlers to their parent containers or tasks
+Executable Parsing			Recursively parses event handler tasks just like main executables
+Output Structure			All stored in self.results for Excel or SQL export
+
+
+Sample Output Row in Excel:
+    Type			      Name				        SubType				    Package
+EventHandler		ExecuteSQL -> OnErrorHandler				OnError				ETL_Package.dtsx
+Executable		ExecuteSQL -> OnErrorHandler > LogError		        ScriptTask			ETL_Package.dtsx
+
+Final Step: Export All Results
+	Combine self.results (executables, handlers, constraints) with the variable/param/connection exports?
+
+	Add a final method to export everything to Excel or SQL?
+	
+export_analysis_results() Function : This method takes all parsed metadata from:
+
+	Executables (Tasks, Containers)
+
+	Precedence Constraints
+
+	Event Handlers
+
+And exports it based on your configuration:
+
+	Excel: as SSIS_Metadata_Analysis.xlsx
+
+	SQL Server: to a table dbo.SSISMetadataResults
+	
+After analysis, we just need to call:
+
+	analyzer.analyze_all_packages()
+	
+	analyzer.export_analysis_results()
