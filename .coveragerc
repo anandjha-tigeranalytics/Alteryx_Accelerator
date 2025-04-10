@@ -1,0 +1,15 @@
+ — For coverage config:
+[run]
+branch = True
+source = ssis_package_analyzer
+
+[report]
+omit =
+    */__init__.py
+exclude_lines =
+    pragma: no cover
+    if __name__ == .__main__.:
+
+[html]
+directory = coverage_html_report
+title = SSIS Package Analyzer Test Coverage
