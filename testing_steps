@@ -1,0 +1,12 @@
+-- Test It Locally
+-- Run these commands to confirm everything works:
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Run tests + coverage
+pytest
+
+# Generate HTML report
+coverage html
+open coverage_html_report/index.html
