@@ -4,6 +4,134 @@ import traceback
 import xml.etree.ElementTree as ET
 from xml.dom import minidom
 import pandas as pd
+from dataclasses import dataclass, field
+from typing import List, Optional
+from datetime import datetime, timedelta
+
+@dataclass
+class TaskInfo:
+    PackageName: Optional[str] = None
+    PackagePath: Optional[str] = None
+    EventHandlerName: Optional[str] = None
+    EventHandlerType: Optional[str] = None
+    EventType: Optional[str] = None
+    TaskName: Optional[str] = None
+    TaskType: Optional[str] = None
+    TaskSqlQuery: Optional[str] = None
+    ContainerName: Optional[str] = None
+    ContainerType: Optional[str] = None
+    ContainerExpression: Optional[str] = None
+    ContainerEnum: Optional[str] = None
+    Variables: Optional[str] = None
+    Parameters: Optional[str] = None
+    Expressions: Optional[str] = None
+    ExecuteProcessDetails: Optional[str] = None
+    FileSystemSourcePath: Optional[str] = None
+    FileSystemDestinationPath: Optional[str] = None
+    SourceComponent: Optional[str] = None
+    TargetComponent: Optional[str] = None
+    SourceType: Optional[str] = None
+    TargetType: Optional[str] = None
+    TargetTable: Optional[str] = None
+    SendMailTask: Optional[str] = None
+    ScriptTask: Optional[str] = None
+    FTPTask: Optional[str] = None
+    ExecutePackage: Optional[str] = None
+    ResultSetDetails: Optional[str] = None
+    SeqTaskName: Optional[str] = None
+    ForeachTaskName: Optional[str] = None
+    ForloopTaskName: Optional[str] = None
+    ConnectionName: Optional[str] = None
+    SourceConnectionName: Optional[str] = None
+    TargetConnectionName: Optional[str] = None
+    TaskComponentDetails: Optional[str] = None
+
+@dataclass
+class ConnectionInfo:
+    ConnectionName: Optional[str] = None
+    ConnectionType: Optional[str] = None
+    ConnectionString: Optional[str] = None
+    ConnectionExpressions: Optional[str] = None
+    ConnectionID: Optional[str] = None
+    IsProjectConnection: Optional[str] = None
+
+@dataclass
+class ContainerInfo:
+    ContainerName: Optional[str] = None
+    ContainerType: Optional[str] = None
+    ContainerExpression: Optional[str] = None
+
+@dataclass
+class VariableInfo:
+    Name: Optional[str] = None
+    Value: Optional[str] = None
+    DataType: Optional[str] = None
+    Namespace: Optional[str] = None
+    IsParameter: int = 0
+
+@dataclass
+class TaskParameterInfo:
+    ParameterName: Optional[str] = None
+    ParameterType: Optional[str] = None
+    DataType: Optional[str] = None
+    Value: Optional[str] = None
+    DtsVariableName: Optional[str] = None
+
+@dataclass
+class DataFlowTaskInfo:
+    ColumnName: Optional[str] = None
+    ColumnType: Optional[str] = None
+    DataType: Optional[str] = None
+    TargetColumn: Optional[str] = None
+    componentName: Optional[str] = None
+    DataConversion: Optional[str] = None
+    PackageName: Optional[str] = None
+    PackagePath: Optional[str] = None
+    TaskName: Optional[str] = None
+    isEventHandler: Optional[str] = None
+    componentPropertyDetails: Optional[str] = None
+    ColumnPropertyDetails: Optional[str] = None
+
+@dataclass
+class PrecedenceConstraintInfo:
+    PrecedenceConstraintFrom: Optional[str] = None
+    PrecedenceConstraintTo: Optional[str] = None
+    PrecedenceConstraintValue: Optional[str] = None
+    PrecedenceConstraintLogicalAnd: Optional[str] = None
+    PrecedenceConstraintEvalOP: Optional[str] = None
+    PrecedenceConstraintExpression: Optional[str] = None
+    ContainerName: Optional[str] = None
+    PackageName: Optional[str] = None
+    PackagePath: Optional[str] = None
+
+@dataclass
+class ProjectParameterInfo:
+    ParameterName: Optional[str] = None
+    DataType: Optional[str] = None
+    Value: Optional[str] = None
+
+@dataclass
+class PackageAnalysisResult:
+    PackageName: Optional[str] = None
+    CreatedDate: Optional[datetime] = None
+    CreatedBy: Optional[str] = None
+    Tasks: List[TaskInfo] = field(default_factory=list)
+    Seqtasks: List[TaskInfo] = field(default_factory=list)
+    Foreachtasks: List[TaskInfo] = field(default_factory=list)
+    Forlooptasks: List[TaskInfo] = field(default_factory=list)
+    Connections: List[ConnectionInfo] = field(default_factory=list)
+    ExecutionTime: Optional[timedelta] = None
+    PackagePath: Optional[str] = None
+    Containers: List[ContainerInfo] = field(default_factory=list)
+    DTSXXML: Optional[str] = None
+    SequenceContainerTaskCount: List[TaskInfo] = field(default_factory=list)
+    ForeachContainerTaskCount: List[TaskInfo] = field(default_factory=list)
+    ForLoopContainerTaskCount: List[TaskInfo] = field(default_factory=list)
+    Variables: List[VariableInfo] = field(default_factory=list)
+    DataFlowTaskDetails: List[DataFlowTaskInfo] = field(default_factory=list)
+    PrecedenceConstraintDetails: List[PrecedenceConstraintInfo] = field(default_factory=list)
+    ExtractTaskDetails: List[TaskInfo] = field(default_factory=list)
+    ProjectParameterDetails: List[ProjectParameterInfo] = field(default_factory=list)
 
 class SSISPackageAnalyzer:
     def __init__(self, package_folder, metadata_connection_string, package_analysis_file_path, dataflow_file_path, package_details_file_path, data_save_type):
