@@ -359,6 +359,89 @@ class SSISPackageAnalyzer:
             })
         self.save_project_parameter_metadata(metadata, self.PackageDetailsFilePath)
 
+    def save_precedence_constraint_metadata(self, result, file_path):
+        if self.DataSaveType.upper() == "EXCEL":
+            workbook_exists = os.path.exists(file_path)
+            for precedence in result.PrecedenceConstraintDetails:
+                if workbook_exists:
+                    workbook = openpyxl.load_workbook(file_path)
+                else:
+                    workbook = openpyxl.Workbook()
+                    workbook.remove(workbook.active)
+
+                sheet_name = "PrecedenceConstraintDetails"
+                if sheet_name not in workbook.sheetnames:
+                    ws = workbook.create_sheet(sheet_name)
+                    ws.append([
+                        "PackageName", "PackagePath", "PrecedenceConstraintFrom", "PrecedenceConstraintTo",
+                        "PrecedenceConstraintValue", "PrecedenceConstraintExpression",
+                        "PrecedenceConstraintLogicalAnd", "PrecedenceConstraintEvalOP", "ContainerName"
+                    ])
+                else:
+                    ws = workbook[sheet_name]
+
+                # Check if record exists
+                exists = False
+                for row in ws.iter_rows(min_row=2, values_only=True):
+                    if (
+                        row[0] == precedence.PackageName and
+                        row[1] == precedence.PackagePath and
+                        row[2] == precedence.PrecedenceConstraintFrom and
+                        row[3] == precedence.PrecedenceConstraintTo and
+                        row[4] == precedence.PrecedenceConstraintValue and
+                        row[5] == precedence.PrecedenceConstraintExpression and
+                        row[6] == precedence.PrecedenceConstraintLogicalAnd and
+                        row[7] == precedence.PrecedenceConstraintEvalOP and
+                        row[8] == precedence.ContainerName
+                    ):
+                        exists = True
+                        break
+
+                if not exists:
+                    ws.append([
+                        precedence.PackageName, precedence.PackagePath,
+                        precedence.PrecedenceConstraintFrom, precedence.PrecedenceConstraintTo,
+                        precedence.PrecedenceConstraintValue, precedence.PrecedenceConstraintExpression,
+                        precedence.PrecedenceConstraintLogicalAnd, precedence.PrecedenceConstraintEvalOP,
+                        precedence.ContainerName
+                    ])
+                    workbook.save(file_path)
+
+        elif self.DataSaveType.upper() == "SQL":
+            conn = pyodbc.connect(self._connection_string)
+            cursor = conn.cursor()
+            for precedence in result.PrecedenceConstraintDetails:
+                insert_query = """
+                    INSERT INTO PrecedenceConstraintDetails (
+                        PackageName, PrecedenceConstraintFrom, PrecedenceConstraintTo, 
+                        PrecedenceConstraintValue, PrecedenceConstraintExpression, PrecedenceConstraintLogicalAnd,
+                        PrecedenceConstraintEvalOP, ContainerName, PackagePath
+                    )
+                    SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
+                    WHERE NOT EXISTS (
+                        SELECT 1 FROM PrecedenceConstraintDetails
+                        WHERE PackageName = ? AND PrecedenceConstraintFrom = ? AND PrecedenceConstraintTo = ?
+                        AND PrecedenceConstraintValue = ? AND PrecedenceConstraintExpression = ?
+                        AND PrecedenceConstraintLogicalAnd = ? AND PrecedenceConstraintEvalOP = ?
+                        AND ContainerName = ? AND PackagePath = ?
+                    )
+                """
+                values = [
+                    precedence.PackageName, precedence.PrecedenceConstraintFrom, precedence.PrecedenceConstraintTo,
+                    precedence.PrecedenceConstraintValue, precedence.PrecedenceConstraintExpression,
+                    precedence.PrecedenceConstraintLogicalAnd, precedence.PrecedenceConstraintEvalOP,
+                    precedence.ContainerName, precedence.PackagePath,
+                    # For WHERE NOT EXISTS part
+                    precedence.PackageName, precedence.PrecedenceConstraintFrom, precedence.PrecedenceConstraintTo,
+                    precedence.PrecedenceConstraintValue, precedence.PrecedenceConstraintExpression,
+                    precedence.PrecedenceConstraintLogicalAnd, precedence.PrecedenceConstraintEvalOP,
+                    precedence.ContainerName, precedence.PackagePath
+                ]
+                cursor.execute(insert_query, values)
+            conn.commit()
+            cursor.close()
+            conn.close()
+
     def save_event_metadata(self, result, file_path):
         if self.DataSaveType.upper() == "EXCEL":
             workbook_exists = os.path.exists(file_path)
