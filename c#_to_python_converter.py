@@ -433,6 +433,188 @@ class SSISPackageAnalyzer:
 
         return task_count
 
+    def extract_task_details(
+        self, task_host, event_handler_name, event_handler_type, event_type,
+        event_indicator, container_name, container_type, container_expression, enum_details
+    ):
+        metadata = PackageAnalysisResult()
+        metadata.ExtractTaskDetails = []
+
+        sql_query = ""
+        execute_process_details = ""
+        source_path = destination_path = ""
+        source_component_name = target_component_name = ""
+        source_type = target_type = ""
+        sql_table = target_sql_table = ""
+        send_mail_task_details = ftp_task_details = script_task_details = ""
+        execute_package_task_details = task_component_details = ""
+        xml_task = bulk_insert_task = expression_task = ""
+        result_set = ""
+        connection_id = source_connection_id = target_connection_id = ""
+
+        task_type = type(task_host.InnerObject)
+        task_type_name = task_type.__name__
+
+        if len(task_host.EventHandlers) > 0:
+            self.extract_event_handlers_for_task(task_host)
+
+        if isinstance(task_host.InnerObject, MainPipe):
+            self.extract_data_flow_task(task_host, event_indicator)
+            task_type_name = "DataFlowTask"
+
+            for component in task_host.InnerObject.ComponentMetaDataCollection:
+                if "Source" in component.Description:
+                    source_component_name = component.Name
+                    source_type = component.Description
+                    source_connection_id = component.RuntimeConnectionCollection[0].ConnectionManagerID
+                    for prop in component.CustomPropertyCollection:
+                        if prop.Name == "SqlCommand":
+                            sql_query = prop.Value
+                        elif prop.Name == "OpenRowset":
+                            sql_table = prop.Value
+                    if not sql_query:
+                        sql_query = sql_table
+
+                elif "Destination" in component.Description:
+                    target_component_name = component.Name
+                    target_type = component.Description
+                    target_connection_id = component.RuntimeConnectionCollection[0].ConnectionManagerID
+                    for prop in component.CustomPropertyCollection:
+                        if prop.Name == "OpenRowset":
+                            target_sql_table = prop.Value
+
+        elif task_type.__name__ == "ExecuteSQLTask":
+            connection_id = getattr(task_host.InnerObject, "Connection", "")
+            sql_query = getattr(task_host.InnerObject, "SqlStatementSource", "")
+            sql_task = task_host.InnerObject
+            if hasattr(sql_task, "ResultSetBindings"):
+                for binding in sql_task.ResultSetBindings:
+                    result_set += f"Result Set Column: {binding.ResultName} | SSIS Variable: {binding.DtsVariableName}  "
+
+        elif isinstance(task_host.InnerObject, FileSystemTask):
+            source_path = task_host.InnerObject.Source
+            destination_path = task_host.InnerObject.Destination
+            task_component_details = f"SourcePath: {source_path} | DestinationPath: {destination_path}"
+
+        elif isinstance(task_host.InnerObject, ExecuteProcess):
+            proc = task_host.InnerObject
+            execute_process_details = f"Executable: {proc.Executable} | Arguments: {proc.Arguments} | WorkingDirectory: {proc.WorkingDirectory}"
+            task_component_details = execute_process_details
+
+        elif isinstance(task_host.InnerObject, SendMailTask):
+            mail = task_host.InnerObject
+            connection_id = mail.SmtpConnection
+            send_mail_task_details = (
+                f"From: {mail.FromLine} | To: {mail.ToLine} | CC: {mail.CCLine} "
+                f"BCC: {mail.BCCLine} | Subject: {mail.Subject} | Body: {mail.MessageSource} | "
+                f"FileAttachments: {mail.FileAttachments} | Priority: {mail.Priority}"
+            )
+            task_component_details = send_mail_task_details
+
+        elif isinstance(task_host.InnerObject, FtpTask):
+            ftp = task_host.InnerObject
+            connection_id = ftp.Connection
+            ftp_task_details = (
+                f"FTP Operation: {ftp.Operation} | LocalPath: {ftp.LocalPath} | RemotePath: {ftp.RemotePath} | "
+                f"OverwriteDestination: {ftp.OverwriteDestination} | IsLocalPathVariable: {ftp.IsLocalPathVariable} | "
+                f"IsRemotePathVariable: {ftp.IsRemotePathVariable} | IsTransferTypeASCII: {ftp.IsTransferTypeASCII} | "
+                f"StopOnOperationFailure: {ftp.StopOnOperationFailure}"
+            )
+            task_component_details = ftp_task_details
+
+        elif isinstance(task_host.InnerObject, ScriptTask):
+            script = task_host.InnerObject
+            script_task_details = (
+                f"Script Language: {script.ScriptLanguage} | EntryPoint: {script.EntryPoint} | "
+                f"ReadOnlyVariables: {script.ReadOnlyVariables} | ReadWriteVariables: {script.ReadWriteVariables} | "
+                f"ScriptProjectName: {script.ScriptProjectName}"
+            )
+            for prop in task_host.Properties:
+                if prop.Name == "CodePage":
+                    script_task_details += f" | Code Page: {prop.GetValue(script)}"
+            task_component_details = script_task_details
+
+        elif isinstance(task_host.InnerObject, ExecutePackageTask):
+            execute_package_task_details = task_host.InnerObject.PackageName
+            task_type_name = "ExecutePackageTask"
+            task_component_details = execute_package_task_details
+
+        elif isinstance(task_host.InnerObject, XMLTask):
+            xml = task_host.InnerObject
+            xml_task = (
+                f"Source: {xml.Source} | SourceType: {xml.SourceType} | DiffAlgorithm: {xml.DiffAlgorithm} | "
+                f"DiffGramDestination: {xml.DiffGramDestination} | DiffOptions: {xml.DiffOptions} | "
+                f"DiffGramDestinationType: {xml.DiffGramDestinationType} | FailOnDifference: {xml.FailOnDifference} | "
+                f"SaveDiffGram: {xml.SaveDiffGram} | OperationType: {xml.OperationType} | "
+                f"SaveOperationResult: {xml.SaveOperationResult} | SecondOperand: {xml.SecondOperand} | "
+                f"SecondOperandType: {xml.SecondOperandType}"
+            )
+            task_component_details = xml_task
+
+        elif isinstance(task_host.InnerObject, BulkInsertTask):
+            bulk = task_host.InnerObject
+            source_connection_id = bulk.SourceConnection
+            target_connection_id = bulk.DestinationConnection
+            bulk_insert_task = (
+                f"FormatFile: {bulk.FormatFile} | FieldTerminator: {bulk.FieldTerminator} | RowTerminator: {bulk.RowTerminator} | "
+                f"DestinationTableName: {bulk.DestinationTableName} | CodePage: {bulk.CodePage} | DataFileType: {bulk.DataFileType} | "
+                f"BatchSize: {bulk.BatchSize} | LastRow: {bulk.LastRow} | FirstRow: {bulk.FirstRow} | "
+                f"CheckConstraints: {bulk.CheckConstraints} | KeepNulls: {bulk.KeepNulls} | KeepIdentity: {bulk.KeepIdentity} | "
+                f"TableLock: {bulk.TableLock} | FireTriggers: {bulk.FireTriggers} | SortedData: {bulk.SortedData} | "
+                f"MaximumErrors: {bulk.MaximumErrors}"
+            )
+            task_component_details = bulk_insert_task
+
+        elif isinstance(task_host.InnerObject, ExpressionTask):
+            expr = task_host.InnerObject
+            expression_task = f"Expression: {expr.Expression} | ExecutionValue: {expr.ExecutionValue}"
+            task_component_details = expression_task
+
+        # Add the task info to metadata
+        metadata.ExtractTaskDetails.append(TaskInfo(
+            TaskName=task_host.Name,
+            TaskType=task_type_name,
+            TaskSqlQuery=sql_query,
+            Variables=self.extract_variables_for_task(task_host),
+            FileSystemSourcePath=source_path,
+            FileSystemDestinationPath=destination_path,
+            Parameters=self.extract_parameters_for_task(task_host),
+            Expressions=self.extract_expressions_for_task(task_host),
+            ExecuteProcessDetails=execute_process_details,
+            SourceComponent=source_component_name,
+            TargetComponent=target_component_name,
+            SourceType=source_type,
+            TargetType=target_type,
+            TargetTable=target_sql_table,
+            SendMailTask=send_mail_task_details,
+            ScriptTask=script_task_details,
+            FTPTask=ftp_task_details,
+            ExecutePackage=execute_package_task_details,
+            ResultSetDetails=result_set,
+            EventHandlerName=event_handler_name,
+            EventHandlerType=event_handler_type,
+            EventType=event_type,
+            ContainerName=container_name,
+            ContainerType=container_type,
+            ContainerExpression=container_expression,
+            PackageName=self.PackageName,
+            PackagePath=self.PackagePath,
+            ContainerEnum=enum_details,
+            SourceConnectionName=source_connection_id,
+            TargetConnectionName=target_connection_id,
+            ConnectionName=connection_id,
+            TaskComponentDetails=task_component_details
+        ))
+
+        # Save based on event or normal
+        if event_indicator == "1":
+            self.save_event_metadata(metadata, self.PackageDetailsFilePath)
+        else:
+            self.save_package_task_metadata(metadata, self.PackageDetailsFilePath)
+
+        return metadata.ExtractTaskDetails
+
+
     def measure_package_performance(self, package_obj):
         """
         Executes a mock package and returns the execution time as a timedelta object.
