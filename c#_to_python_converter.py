@@ -359,6 +359,70 @@ class SSISPackageAnalyzer:
             })
         self.save_project_parameter_metadata(metadata, self.PackageDetailsFilePath)
 
+    def save_event_metadata(self, result, file_path):
+        if self.DataSaveType.upper() == "EXCEL":
+            workbook_exists = os.path.exists(file_path)
+            for task in result.ExtractTaskDetails:
+                if not task.TaskName:
+                    continue
+
+                if workbook_exists:
+                    workbook = load_workbook(file_path)
+                else:
+                    workbook = openpyxl.Workbook()
+                    workbook.remove(workbook.active)
+
+                sheet_name = "EventHandlerTaskDetails"
+                if sheet_name not in workbook.sheetnames:
+                    ws = workbook.create_sheet(sheet_name)
+                    ws.append([
+                        "PackageName", "PackagePath", "EventHandlerName", "EventHandlerType", "EventType",
+                        "TaskName", "TaskType", "ContainerName", "ContainerType", "ContainerExpression",
+                        "TaskConnectionName", "SqlQuery", "Variables", "Parameters", "Expressions",
+                        "DataFlowDaskSourceName", "DataFlowTaskSourceType", "DataFlowTaskTargetName", "DataFlowTaskTargetType",
+                        "DataFlowTaskTargetTable", "DataFlowDaskSourceConnectionName", "DataFlowDaskTargetConnectionName",
+                        "SendMailTaskDetails", "ResultSetDetails", "TaskComponentDetails"
+                    ])
+                ws = workbook[sheet_name]
+                ws.append([
+                    task.PackageName, task.PackagePath, task.EventHandlerName, task.EventHandlerType, task.EventType,
+                    task.TaskName, task.TaskType, task.ContainerName, task.ContainerType, task.ContainerExpression,
+                    task.ConnectionName, task.TaskSqlQuery, task.Variables, task.Parameters, task.Expressions,
+                    task.SourceComponent, task.SourceType, task.TargetComponent, task.TargetType,
+                    task.TargetTable, task.SourceConnectionName, task.TargetConnectionName,
+                    task.SendMailTask, task.ResultSetDetails, task.TaskComponentDetails
+                ])
+                workbook.save(file_path)
+
+        elif self.DataSaveType.upper() == "SQL":
+            conn = pyodbc.connect(self._connection_string)
+            cursor = conn.cursor()
+            for task in result.ExtractTaskDetails:
+                if not task.TaskName:
+                    continue
+                insert_query = """
+                    INSERT INTO EventTaskDetails (
+                        PackageName, TaskName, TaskType, SqlQuery, ContainerName, PackagePath,
+                        Variables, Parameters, Expressions, DataFlowDaskSourceName,
+                        DataFlowTaskSourceType, DataFlowTaskTargetName, DataFlowTaskTargetType,
+                        DataFlowTaskTargetTable, SendMailTaskDetails, ResultSetDetails,
+                        ContainerType, ContainerExpression, EventHandlerName, EventHandlerType,
+                        EventType, DataFlowDaskSourceConnectionName, DataFlowDaskTargetConnectionName,
+                        TaskConnectionName, TaskComponentDetails
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """
+                cursor.execute(insert_query, (
+                    task.PackageName, task.TaskName, task.TaskType, task.TaskSqlQuery, task.ContainerName,
+                    task.PackagePath, task.Variables, task.Parameters, task.Expressions, task.SourceComponent,
+                    task.SourceType, task.TargetComponent, task.TargetType, task.TargetTable, task.SendMailTask,
+                    task.ResultSetDetails, task.ContainerType, task.ContainerExpression, task.EventHandlerName,
+                    task.EventHandlerType, task.EventType, task.SourceConnectionName, task.TargetConnectionName,
+                    task.ConnectionName, task.TaskComponentDetails
+                ))
+            conn.commit()
+            cursor.close()
+            conn.close()
+
     def save_package_task_metadata(self, result, file_path):
         if self.DataSaveType.upper() == "EXCEL":
             tasks = result.get("ExtractTaskDetails", [])
