@@ -10,6 +10,7 @@ import pandas as pd
 from dataclasses import dataclass, field
 from typing import List, Optional
 from datetime import datetime, timedelta
+import xml.dom.minidom as minidom
 
 @dataclass
 class TaskInfo:
@@ -200,7 +201,6 @@ class SSISPackageAnalyzer:
 
     def truncate_table(self):
         if self.DataSaveType.upper() == "SQL":
-            import pyodbc
             try:
                 conn = pyodbc.connect(self._connection_string)
                 cursor = conn.cursor()
@@ -284,8 +284,6 @@ class SSISPackageAnalyzer:
             print("Saved variable metadata to SQL Server")
 
     def analyze_single_connection_manager(self, connection_manager_path):
-        import xml.dom.minidom as minidom
-
         doc = minidom.parse(connection_manager_path)
         root = doc.documentElement
 
