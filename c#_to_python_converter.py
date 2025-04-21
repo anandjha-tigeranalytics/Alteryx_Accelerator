@@ -1,16 +1,18 @@
 import os
 import openpyxl
-from openpyxl import load_workbook,Workbook
 import pyodbc
 import threading
 import traceback
 import xml.etree.ElementTree as ET
-from xml.dom import minidom
+import xml.dom.minidom as minidom
 import pandas as pd
+from openpyxl import load_workbook,Workbook
+from xml.dom import minidom
 from dataclasses import dataclass, field
 from typing import List, Optional
 from datetime import datetime, timedelta
-import xml.dom.minidom as minidom
+from openpyxl.utils import get_column_letter
+from openpyxl.worksheet.worksheet import Worksheet
 
 @dataclass
 class TaskInfo:
@@ -359,6 +361,145 @@ class SSISPackageAnalyzer:
             })
         self.save_project_parameter_metadata(metadata, self.PackageDetailsFilePath)
 
+    def save_package_metadata(self, result, analysis_file_path, details_file_path):
+        complexity = ""
+        complexity_count = (
+            len(result.Tasks) + len(result.Foreachtasks) + len(result.Seqtasks) +
+            len(result.Forlooptasks) + len(result.Containers) + self.container_count + self.ComponentCount
+        )
+
+        if complexity_count <= 5:
+            complexity = "Simple"
+        elif 5 < complexity_count <= 10:
+            complexity = "Medium"
+        elif complexity_count > 10:
+            complexity = "Complex"
+        else:
+            complexity = "Simple"
+
+        if self.DataSaveType.upper() == "EXCEL":
+            workbook_exists = os.path.exists(analysis_file_path)
+            if workbook_exists:
+                workbook = load_workbook(analysis_file_path)
+            else:
+                workbook = Workbook()
+
+            sheet_name = "PackageAnalysisResults"
+            if sheet_name not in workbook.sheetnames:
+                sheet = workbook.create_sheet(sheet_name)
+                sheet.append([
+                    "PackageName", "PackagePath", "TasksCount", "ConnectionsCount", "ContainerCount",
+                    "ComponentCount", "ExecutionTime", "CreatedDate", "CreatedBy", "Complexity"
+                ])
+            else:
+                sheet = workbook[sheet_name]
+
+            row = [
+                result.PackageName,
+                result.PackagePath,
+                len(result.Tasks) + len(result.Foreachtasks) + len(result.Seqtasks) + len(result.Forlooptasks),
+                len(result.Connections),
+                len(result.Containers) + self.container_count,
+                self.ComponentCount,
+                result.ExecutionTime,
+                result.CreatedDate,
+                result.CreatedBy,
+                complexity
+            ]
+            sheet.append(row)
+            workbook.save(analysis_file_path)
+
+            # Saving Variables to 'PackageVariableParameterDetails'
+            workbook_details = load_workbook(details_file_path) if os.path.exists(details_file_path) else Workbook()
+
+            # 1. Variables
+            var_sheet_name = "PackageVariableParameterDetails"
+            if var_sheet_name not in workbook_details.sheetnames:
+                sheet_vars = workbook_details.create_sheet(var_sheet_name)
+                sheet_vars.append([
+                    "PackageName", "PackagePath", "VariableOrParameterName", "DataType", "Value", "IsParameter"
+                ])
+            else:
+                sheet_vars = workbook_details[var_sheet_name]
+
+            for var in result.Variables:
+                sheet_vars.append([
+                    result.PackageName, result.PackagePath, var.Name, var.DataType, var.Value, var.IsParameter
+                ])
+
+            # 2. Connections
+            conn_sheet_name = "PackageConnectionDetails"
+            if conn_sheet_name not in workbook_details.sheetnames:
+                sheet_conn = workbook_details.create_sheet(conn_sheet_name)
+                sheet_conn.append([
+                    "PackageName", "PackagePath", "ConnectionName", "ConnectionType",
+                    "ConnectionExpressions", "ConnectionString", "ConnectionID", "IsProjectConnection"
+                ])
+            else:
+                sheet_conn = workbook_details[conn_sheet_name]
+
+            for conn in result.Connections:
+                sheet_conn.append([
+                    result.PackageName, result.PackagePath,
+                    conn.ConnectionName, conn.ConnectionType,
+                    conn.ConnectionExpressions, conn.ConnectionString,
+                    conn.ConnectionID, conn.IsProjectConnection
+                ])
+
+            workbook_details.save(details_file_path)
+
+        elif self.DataSaveType.upper() == "SQL":
+            conn = pyodbc.connect(self._connection_string)
+            cursor = conn.cursor()
+
+            insert_package = """
+            INSERT INTO PackageAnalysisResults 
+            (PackageName, CreatedDate, TaskCount, ConnectionCount, ExecutionTime, PackageFolder, ContainerCount, DTSXXML, CreatedBy, DataFlowTaskComponentCount)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """
+            cursor.execute(insert_package, (
+                result.PackageName,
+                result.CreatedDate,
+                len(result.Tasks) + len(result.Foreachtasks) + len(result.Seqtasks) + len(result.Forlooptasks),
+                len(result.Connections),
+                result.ExecutionTime,
+                result.PackagePath,
+                len(result.Containers) + self.container_count,
+                result.DTSXXML,
+                result.CreatedBy,
+                self.ComponentCount
+            ))
+
+            for var in result.Variables:
+                insert_var = """
+                INSERT INTO PackageVariableParameterDetails 
+                (PackageName, VariableOrParameterName, DataType, Value, PackagePath, IsParameter)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """
+                cursor.execute(insert_var, (
+                    result.PackageName, var.Name, var.DataType, var.Value, result.PackagePath, var.IsParameter
+                ))
+
+            for conn in result.Connections:
+                insert_conn = """
+                INSERT INTO PackageConnectionDetails 
+                (PackageName, ConnectionName, ConnectionType, PackagePath, ConnectionExpressions, ConnectionString, ConnectionDTSID, IsProjectConnection)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """
+                cursor.execute(insert_conn, (
+                    result.PackageName,
+                    conn.ConnectionName,
+                    conn.ConnectionType,
+                    result.PackagePath,
+                    conn.ConnectionExpressions,
+                    conn.ConnectionString,
+                    conn.ConnectionID,
+                    conn.IsProjectConnection
+                ))
+
+            conn.commit()
+            cursor.close()
+            conn.close()
 
     def save_dataflow_metadata(self, result, file_path):
         if self.DataSaveType.upper() == "EXCEL":
