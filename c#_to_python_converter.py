@@ -1,6 +1,6 @@
 import os
 import openpyxl
-from openpyxl import load_workbook
+from openpyxl import load_workbook,Workbook
 import pyodbc
 import threading
 import traceback
@@ -361,8 +361,58 @@ class SSISPackageAnalyzer:
             })
         self.save_project_parameter_metadata(metadata, self.PackageDetailsFilePath)
 
-    def save_project_parameter_metadata(self, metadata, file_path):
-        print(f"Saving project parameter metadata: {metadata}")
+    def save_project_parameter_metadata(self, result, file_path):
+        if self.DataSaveType.upper() == "EXCEL":
+            for param_info in result.get("ProjectParameterDetails", []):
+                if not result.get("PackageName"):
+                    continue
+
+                if os.path.exists(file_path):
+                    wb = load_workbook(file_path)
+                else:
+                    wb = Workbook()
+                    wb.remove(wb.active)
+
+                if "ProjectParameterDetails" in wb.sheetnames:
+                    ws = wb["ProjectParameterDetails"]
+                else:
+                    ws = wb.create_sheet("ProjectParameterDetails")
+                    ws.append(["ProjectPath", "ParameterName", "ParameterValue", "ParameterDataType"])
+
+                row = [
+                    result.get("PackagePath", ""),
+                    param_info.get("ParameterName", ""),
+                    param_info.get("Value", ""),
+                    param_info.get("DataType", "")
+                ]
+                ws.append(row)
+                wb.save(file_path)
+
+            print(f"Saved project parameters to Excel: {file_path}")
+
+        elif self.DataSaveType.upper() == "SQL":
+            conn = pyodbc.connect(self._connection_string)
+            cursor = conn.cursor()
+
+            for param_info in result.get("ProjectParameterDetails", []):
+                if not result.get("PackageName"):
+                    continue
+
+                cursor.execute("""
+                    INSERT INTO ProjectParameterDetails (
+                        ParameterName, ParameterValue, ParameterDataType, ProjectPath
+                    ) VALUES (?, ?, ?, ?)
+                """, (
+                    param_info.get("ParameterName", ""),
+                    param_info.get("Value", ""),
+                    param_info.get("DataType", ""),
+                    result.get("PackagePath", "")
+                ))
+
+            conn.commit()
+            cursor.close()
+            conn.close()
+            print("Saved project parameters to SQL Server.")
 
     def save_connections_metadata(self, metadata, file_path):
         print(f"Saving connection metadata: {metadata}")
