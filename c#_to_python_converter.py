@@ -360,9 +360,134 @@ class SSISPackageAnalyzer:
                 'DataType': datatype,
                 'Value': value
             })
-        self.save_project_parameter_metadata(metadata, self.PackageDetailsFilePath)
+        self.save_project_parameter_metadata(metadata, self.PackageDetailsFilePath
 
 
+    def count_package_connections(self, package):
+        """
+        Extracts all the connection metadata from a given SSIS package and returns a list of ConnectionInfo objects.
+        """
+        connections = []
+
+        for conn in package.Connections:
+            connection_details = ""
+            expression_details = []
+
+            for prop in conn.Properties:
+                try:
+                    expression = conn.GetExpression(prop.Name)
+                    if expression:
+                        expression_details.append(f"{prop.Name}: {expression}")
+                except Exception as ex:
+                    print(f"Error accessing expression for property {prop.Name}: {str(ex)}")
+
+            if expression_details:
+                connection_details = "Expressions: " + ", ".join(expression_details)
+
+            connections.append(ConnectionInfo(
+                ConnectionName=conn.Name,
+                ConnectionString=conn.ConnectionString,
+                ConnectionExpressions=connection_details,
+                ConnectionType=conn.CreationName,
+                ConnectionID=conn.ID,
+                IsProjectConnection="0"
+            ))
+
+        return connections
+
+    def count_package_containers(self, package):
+        """
+        Counts all the top-level containers in the SSIS package and extracts their metadata.
+        """
+        containers = []
+        expression_details = ""
+
+        for executable in package.Executables:
+            if isinstance(executable, DtsContainer) and not isinstance(executable, TaskHost):
+
+                if isinstance(executable, ForEachLoop):
+                    expression_details = self.get_foreach_loop_expressions(executable)
+                else:
+                    expression_details = ""
+
+                # Add base container info
+                containers.append(ContainerInfo(
+                    ContainerName=executable.Name,
+                    ContainerType=type(executable).__name__,
+                    ContainerExpression=expression_details
+                ))
+
+                # Process container-specific inner executables
+                if isinstance(executable, Sequence):
+                    self.process_sequence_container(executable, containers)
+                elif isinstance(executable, ForEachLoop):
+                    self.process_foreach_loop_container(executable, containers)
+                elif isinstance(executable, ForLoop):
+                    self.process_for_loop_container(executable, containers)
+
+        return containers
+
+    
+    def get_foreach_loop_expressions(self, foreach_loop):
+        """
+        Extracts expression metadata from a ForEachLoop container's enumerator.
+        """
+        expression_list = []
+
+        try:
+            enumerator = foreach_loop.ForEachEnumerator
+
+            if hasattr(enumerator, "Properties"):
+                for prop in enumerator.Properties:
+                    expression = ""
+                    try:
+                        # Attempt to retrieve expression using the property name
+                        expression = enumerator.GetExpression(prop.Name)
+                    except Exception as ex:
+                        print(f"Error retrieving expression for {prop.Name}: {str(ex)}")
+
+                    if expression:
+                        expression_list.append(f"Property: {prop.Name}, Expression: {expression}")
+        except Exception as ex:
+            print(f"Error accessing enumerator: {str(ex)}")
+
+        return " | ".join(expression_list)
+
+
+    def get_foreach_loop_enumerator(self, foreach_loop):
+        """
+        Extracts enumerator metadata from a ForEachLoop container, excluding default system properties.
+        """
+        enumerator_details = []
+
+        try:
+            enumerator = foreach_loop.ForEachEnumerator
+
+            if enumerator:
+                if isinstance(enumerator, ForEachEnumeratorHost):
+                    excluded_properties = {
+                        "ID",
+                        "Description",
+                        "CollectionEnumerator",
+                        "CreationName",
+                        "Name"
+                    }
+
+                    for prop in enumerator.Properties:
+                        enum_name = prop.Name
+                        if enum_name not in excluded_properties:
+                            try:
+                                value = prop.GetValue(enumerator)
+                                enumerator_details.append(f"EnumeratorName: {enum_name}, EnumeratorValue: {value}")
+                            except Exception as inner_ex:
+                                print(f"Could not get value for property {enum_name}: {str(inner_ex)}")
+
+        except Exception as ex:
+            print(f"An error occurred: {str(ex)}")
+
+        return " | ".join(enumerator_details)
+
+    
     def get_for_loop_expressions(self, for_loop):
         """
         Extracts expression properties from a ForLoop container.
