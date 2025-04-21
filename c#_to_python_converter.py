@@ -363,6 +363,70 @@ class SSISPackageAnalyzer:
         self.save_project_parameter_metadata(metadata, self.PackageDetailsFilePath
 
 
+    def match_columns(input_column, output_column):
+        """
+        Checks if input and output SSIS columns match by name or data type.
+
+        Args:
+            input_column: An object representing the SSIS input column.
+            output_column: An object representing the SSIS output column.
+
+        Returns:
+            bool: True if the columns match by name or data type, else False.
+        """
+
+        # Match by name
+        if input_column.Name == output_column.Name:
+            return True
+
+        # Match by data type
+        if input_column.DataType == output_column.DataType:
+            return True
+
+        # No match
+        return False
+
+                                             
+    def extract_expressions_for_task(self, task_host):
+        expressions_used = []
+        expression_details = ""
+
+        try:
+            task = task_host.InnerObject
+            task_type = type(task)
+
+            if task_host.HasExpressions:
+                for prop in task_host.Properties:
+                    try:
+                        expression = task_host.GetExpression(prop.Name)
+                        if expression:
+                            expressions_used.append(f"Property: {prop.Name}, Expression: {expression}")
+                    except Exception as ex:
+                        print(f"Error extracting expression for property {prop.Name}: {str(ex)}")
+
+            if isinstance(task, MainPipe):  # Data Flow Task
+                for component in task.ComponentMetaDataCollection:
+                    for custom_property in component.CustomPropertyCollection:
+                        if custom_property.Name == "Expression":
+                            expressions_used.append(
+                                f"Expression Name: {custom_property.Name} Expression Value: {custom_property.Value}"
+                            )
+            else:
+                for prop_info in task_type.GetProperties():
+                    try:
+                        expression = task_host.GetExpression(prop_info.Name)
+                        if expression:
+                            expressions_used.append(f"Property: {prop_info.Name}, Expression: {expression}")
+                    except Exception as ex:
+                        print(f"Error reading expression from property {prop_info.Name}: {str(ex)}")
+
+            return ", ".join(expressions_used)
+
+        except Exception as ex:
+            print(f"Error while extracting expressions: {str(ex)}")
+            return ""
+
+
     def count_package_connections(self, package):
         """
         Extracts all the connection metadata from a given SSIS package and returns a list of ConnectionInfo objects.
