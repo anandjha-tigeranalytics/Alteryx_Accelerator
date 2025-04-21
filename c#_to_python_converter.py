@@ -362,6 +362,166 @@ class SSISPackageAnalyzer:
             })
         self.save_project_parameter_metadata(metadata, self.PackageDetailsFilePath)
 
+
+    def get_for_loop_expressions(self, for_loop):
+        """
+        Extracts expression properties from a ForLoop container.
+        """
+        expressions = []
+
+        for prop in for_loop.Properties:
+            expression = ""
+            try:
+                expression = for_loop.GetExpression(prop.Name)
+            except Exception as ex:
+                print(f"Error retrieving expression for {prop.Name}: {str(ex)}")
+
+            if expression:
+                expressions.append(f"Property: {prop.Name}, Expression: {expression}")
+
+        return " | ".join(expressions)
+        
+
+    def get_for_loop_enumerator(self, for_loop):
+        """
+        Returns a string summary of the Assign, Init, and Eval expressions of a ForLoop container.
+        """
+        try:
+            return (f"AssignExpression : {for_loop.AssignExpression} | "
+                    f"InitExpression : {for_loop.InitExpression} | "
+                    f"EvalExpression : {for_loop.EvalExpression}")
+        except Exception as ex:
+            print(f"An error occurred: {str(ex)}")
+            return ""
+            
+
+    def process_sequence_container_details(self, container, containers, package):
+        seq_tasks = []
+        container_name = container.Name
+        container_type = type(container).__name__
+
+        if len(container.EventHandlers) > 0:
+            self.extract_event_handlers_for_sequence(container)
+
+        for executable in container.Executables:
+            if isinstance(executable, TaskHost):
+                self.extract_task_details(
+                    executable, "", "", "", "0", container_name, container_type, "", ""
+                )
+
+                seq_tasks.append(TaskInfo(
+                    SeqTaskName=executable.Name
+                ))
+
+            elif isinstance(executable, DtsContainer):
+                containers.append(ContainerInfo(
+                    ContainerName=executable.Name,
+                    ContainerType=type(executable).__name__
+                ))
+
+                if isinstance(executable, Sequence):
+                    # Optionally extract actual nested task info using: self.process_sequence_container_details(...)
+                    seq_tasks.extend(self.count_sequence_container_tasks(package))
+                    self.process_sequence_container(executable, containers)
+
+                elif isinstance(executable, ForEachLoop):
+                    seq_tasks.extend(self.count_foreach_container_tasks(package))
+                    self.process_foreach_loop_container(executable, containers)
+
+                elif isinstance(executable, ForLoop):
+                    seq_tasks.extend(self.count_forloop_container_tasks(package))
+                    self.process_for_loop_container(executable, containers)
+
+        self.containerTaskCount += len(seq_tasks)
+        return seq_tasks
+
+    
+    def process_foreach_loop_container_details(self, container, containers, package):
+        foreach_tasks = []
+        expression_details = self.get_foreach_loop_expressions(container)
+        container_name = container.Name
+        container_type = type(container).__name__
+        enumerator_details = self.get_foreach_loop_enumerator(container)
+
+        if len(container.EventHandlers) > 0:
+            self.extract_event_handlers_for_foreach_loop(container)
+
+        for executable in container.Executables:
+            if isinstance(executable, TaskHost):
+                self.extract_task_details(
+                    executable, "", "", "", "0", container_name, container_type, expression_details, enumerator_details
+                )
+
+                foreach_tasks.append(TaskInfo(
+                    ForeachTaskName=executable.Name
+                ))
+
+            elif isinstance(executable, DtsContainer):
+                containers.append(ContainerInfo(
+                    ContainerName=executable.Name,
+                    ContainerType=type(executable).__name__
+                ))
+
+                if isinstance(executable, Sequence):
+                    foreach_tasks.extend(self.count_sequence_container_tasks(package))
+                    self.process_sequence_container(executable, containers)
+
+                elif isinstance(executable, ForEachLoop):
+                    foreach_tasks.extend(self.count_foreach_container_tasks(package))
+                    self.process_foreach_loop_container(executable, containers)
+
+                elif isinstance(executable, ForLoop):
+                    foreach_tasks.extend(self.count_forloop_container_tasks(package))
+                    self.process_for_loop_container(executable, containers)
+
+        self.containerTaskCount += len(foreach_tasks)
+
+        return foreach_tasks
+
+
+    def process_for_loop_container_details(self, container, containers, package):
+        for_loop_tasks = []
+        expression_details = self.get_for_loop_expressions(container)
+        enumerator_details = self.get_for_loop_enumerator(container)
+
+        container_name = container.Name
+        container_type = type(container).__name__
+
+        if len(container.EventHandlers) > 0:
+            self.extract_event_handlers_for_for_loop(container)
+
+        for executable in container.Executables:
+            if isinstance(executable, TaskHost):
+                self.extract_task_details(
+                    executable, "", "", "", "0", container_name, container_type, expression_details, enumerator_details
+                )
+
+                for_loop_tasks.append(TaskInfo(
+                    ForloopTaskName=executable.Name
+                ))
+
+            elif isinstance(executable, DtsContainer):
+                containers.append(ContainerInfo(
+                    ContainerName=executable.Name,
+                    ContainerType=type(executable).__name__
+                ))
+
+                if isinstance(executable, Sequence):
+                    for_loop_tasks.extend(self.count_sequence_container_tasks(package))
+                    self.process_sequence_container(executable, containers)
+
+                elif isinstance(executable, ForEachLoop):
+                    for_loop_tasks.extend(self.count_foreach_container_tasks(package))
+                    self.process_foreach_loop_container(executable, containers)
+
+                elif isinstance(executable, ForLoop):
+                    for_loop_tasks.extend(self.count_forloop_container_tasks(package))
+                    self.process_for_loop_container(executable, containers)
+
+        self.containerTaskCount += len(for_loop_tasks)
+
+        return for_loop_tasks
+
     def process_sequence_container(self, container, containers):
         """
         Recursively processes a Sequence container and counts the number of TaskHost elements within it.
