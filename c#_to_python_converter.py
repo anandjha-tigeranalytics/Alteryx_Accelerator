@@ -1,4 +1,5 @@
 import os
+import time
 import openpyxl
 import pyodbc
 import threading
@@ -360,6 +361,24 @@ class SSISPackageAnalyzer:
                 'Value': value
             })
         self.save_project_parameter_metadata(metadata, self.PackageDetailsFilePath)
+
+    def measure_package_performance(self, package_obj):
+        """
+        Executes a mock package and returns the execution time as a timedelta object.
+        Assumes 'package_obj' has an 'execute()' method.
+        """
+        start_time = time.time()
+        package_obj.execute()  # This should be your actual package processing logic
+        end_time = time.time()
+        return end_time - start_time  # Returns seconds as float
+
+    @staticmethod
+    def does_workbook_exist(file_path):
+        """
+        Checks if an Excel workbook exists at the specified path.
+        Returns True if exists, otherwise False.
+        """
+        return os.path.isfile(file_path)
 
     def save_package_metadata(self, result, analysis_file_path, details_file_path):
         complexity = ""
