@@ -1,4 +1,7 @@
 import os
+import openpyxl
+from openpyxl import load_workbook
+import pyodbc
 import threading
 import traceback
 import xml.etree.ElementTree as ET
@@ -369,8 +372,200 @@ class SSISPackageAnalyzer:
         traceback.print_exc()
 
     def save_update_connection_name(self, file_path):
-        pass
+        if self.DataSaveType.upper() == "EXCEL":
+            wb = load_workbook(file_path)
 
+            sheet1 = wb["PackageTaskDetails"]
+            sheet2 = wb["PackageConnectionDetails"]
+            sheet3 = wb["EventHandlerTaskDetails"]
+
+            for row2 in range(2, sheet2.max_row + 1):
+                conn_pkg_path = sheet2.cell(row=row2, column=2).value
+                conn_name = sheet2.cell(row=row2, column=3).value
+                conn_dtsid = sheet2.cell(row=row2, column=7).value
+
+                for row1 in range(2, sheet1.max_row + 1):
+                    task_pkg_path = sheet1.cell(row=row1, column=2).value
+                    if conn_pkg_path == task_pkg_path:
+                        if conn_dtsid == sheet1.cell(row=row1, column=6).value:
+                            sheet1.cell(row=row1, column=6).value = conn_name
+                        elif conn_dtsid == sheet1.cell(row=row1, column=16).value:
+                            sheet1.cell(row=row1, column=16).value = conn_name
+                        elif conn_dtsid == sheet1.cell(row=row1, column=17).value:
+                            sheet1.cell(row=row1, column=17).value = conn_name
+
+                for row3 in range(2, sheet3.max_row + 1):
+                    handler_pkg_path = sheet3.cell(row=row3, column=2).value
+                    if conn_pkg_path == handler_pkg_path:
+                        if conn_dtsid == sheet3.cell(row=row3, column=11).value:
+                            sheet3.cell(row=row3, column=11).value = conn_name
+                        elif conn_dtsid == sheet3.cell(row=row3, column=21).value:
+                            sheet3.cell(row=row3, column=21).value = conn_name
+                        elif conn_dtsid == sheet3.cell(row=row3, column=22).value:
+                            sheet3.cell(row=row3, column=22).value = conn_name
+
+            wb.save(file_path)
+            print("Connection names updated in Excel.")
+
+        elif self.DataSaveType.upper() == "SQL":
+            conn = pyodbc.connect(self._connection_string)
+            cursor = conn.cursor()
+
+            connection_query = """
+            UPDATE task SET task.TaskConnectionName = conn.ConnectionName
+            FROM PackageTaskDetails task
+            INNER JOIN PackageConnectionDetails conn WITH (NOLOCK)
+                ON conn.PackagePath = task.PackagePath
+                AND task.TaskConnectionName = conn.ConnectionDTSID
+            WHERE ISNULL(task.TaskConnectionName, '') <> '';
+
+            UPDATE task SET 
+                task.DataFlowDaskSourceConnectionName = sconn.ConnectionName, 
+                task.DataFlowDaskTargetConnectionName = tconn.ConnectionName
+            FROM PackageTaskDetails task
+            INNER JOIN PackageConnectionDetails sconn WITH (NOLOCK)
+                ON sconn.PackagePath = task.PackagePath
+                AND task.DataFlowDaskSourceConnectionName = sconn.ConnectionDTSID
+            INNER JOIN PackageConnectionDetails tconn WITH (NOLOCK)
+                ON tconn.PackagePath = task.PackagePath
+                AND task.DataFlowDaskTargetConnectionName = tconn.ConnectionDTSID
+            WHERE ISNULL(task.DataFlowDaskSourceConnectionName, '') <> '';
+
+            UPDATE task SET task.TaskConnectionName = conn.ConnectionName
+            FROM EventTaskDetails task
+            INNER JOIN PackageConnectionDetails conn WITH (NOLOCK)
+                ON conn.PackagePath = task.PackagePath
+                AND task.TaskConnectionName = conn.ConnectionDTSID
+            WHERE ISNULL(task.TaskConnectionName, '') <> '';
+
+            UPDATE task SET 
+                task.DataFlowDaskSourceConnectionName = sconn.ConnectionName,
+                task.DataFlowDaskTargetConnectionName = tconn.ConnectionName
+            FROM EventTaskDetails task
+            INNER JOIN PackageConnectionDetails sconn WITH (NOLOCK)
+                ON sconn.PackagePath = task.PackagePath
+                AND task.DataFlowDaskSourceConnectionName = sconn.ConnectionDTSID
+            INNER JOIN PackageConnectionDetails tconn WITH (NOLOCK)
+                ON tconn.PackagePath = task.PackagePath
+                AND task.DataFlowDaskTargetConnectionName = tconn.ConnectionDTSID
+            WHERE ISNULL(task.DataFlowDaskSourceConnectionName, '') <> '';
+
+            -- Reset precedence constraints
+            UPDATE task SET
+                task.ONSuccessPrecedenceConstrainttoTask = '',
+                task.ONSuccessPrecedenceConstraintExpression = '',
+                task.ONSuccessPrecedenceConstraintEvalOP = '',
+                task.ONSuccessPrecedenceConstraintLogicalAnd = '',
+                task.ONFailurePrecedenceConstrainttoTask = '',
+                task.ONFailurePrecedenceConstraintExpression = '',
+                task.ONFailurePrecedenceConstraintEvalOP = '',
+                task.ONFailurePrecedenceConstraintLogicalAnd = '',
+                task.ONCompletionPrecedenceConstrainttoTask = '',
+                task.ONCompletionPrecedenceConstraintExpression = '',
+                task.ONCompletionPrecedenceConstraintEvalOP = '',
+                task.ONCompletionPrecedenceConstraintLogicalAnd = ''
+            FROM PackageTaskDetails task;
+
+            -- Apply precedence constraints (Success, Failure, Completion)
+            UPDATE task SET
+                task.ONSuccessPrecedenceConstrainttoTask = pcd.PrecedenceConstraintto,
+                task.ONSuccessPrecedenceConstraintExpression = pcd.PrecedenceConstraintExpression,
+                task.ONSuccessPrecedenceConstraintEvalOP = pcd.PrecedenceConstraintEvalOP,
+                task.ONSuccessPrecedenceConstraintLogicalAnd = pcd.PrecedenceConstraintLogicalAnd
+            FROM PackageTaskDetails task
+            INNER JOIN PrecedenceConstraintDetails pcd WITH (NOLOCK)
+                ON pcd.PrecedenceConstraintFrom = task.TaskName
+                AND pcd.PackageName = task.PackageName
+                AND pcd.PackagePath = task.PackagePath
+                AND ISNULL(pcd.ContainerName, '') = ISNULL(task.ContainerName, '')
+            WHERE pcd.PrecedenceConstraintValue = 'Success';
+
+            UPDATE task SET
+                task.ONFailurePrecedenceConstrainttoTask = pcd.PrecedenceConstraintto,
+                task.ONFailurePrecedenceConstraintExpression = pcd.PrecedenceConstraintExpression,
+                task.ONFailurePrecedenceConstraintEvalOP = pcd.PrecedenceConstraintEvalOP,
+                task.ONFailurePrecedenceConstraintLogicalAnd = pcd.PrecedenceConstraintLogicalAnd
+            FROM PackageTaskDetails task
+            INNER JOIN PrecedenceConstraintDetails pcd WITH (NOLOCK)
+                ON pcd.PrecedenceConstraintFrom = task.TaskName
+                AND pcd.PackageName = task.PackageName
+                AND pcd.PackagePath = task.PackagePath
+                AND ISNULL(pcd.ContainerName, '') = ISNULL(task.ContainerName, '')
+            WHERE pcd.PrecedenceConstraintValue = 'Failure';
+
+            UPDATE task SET
+                task.ONCompletionPrecedenceConstrainttoTask = pcd.PrecedenceConstraintto,
+                task.ONCompletionPrecedenceConstraintExpression = pcd.PrecedenceConstraintExpression,
+                task.ONCompletionPrecedenceConstraintEvalOP = pcd.PrecedenceConstraintEvalOP,
+                task.ONCompletionPrecedenceConstraintLogicalAnd = pcd.PrecedenceConstraintLogicalAnd
+            FROM PackageTaskDetails task
+            INNER JOIN PrecedenceConstraintDetails pcd WITH (NOLOCK)
+                ON pcd.PrecedenceConstraintFrom = task.TaskName
+                AND pcd.PackageName = task.PackageName
+                AND pcd.PackagePath = task.PackagePath
+                AND ISNULL(pcd.ContainerName, '') = ISNULL(task.ContainerName, '')
+            WHERE pcd.PrecedenceConstraintValue = 'Completion';
+
+            -- Set Complexity Classification
+            UPDATE PA SET PA.Complexcity = CASE 
+                WHEN Final.TaskCount + Final.ContainerCount + Final.ComponentCount < 5 THEN 'Simple'
+                WHEN Final.TaskCount + Final.ContainerCount + Final.ComponentCount BETWEEN 5 AND 10 THEN 'Medium'
+                WHEN Final.TaskCount + Final.ContainerCount + Final.ComponentCount > 10 THEN 'Complex'
+                ELSE 'Simple'
+            END
+            FROM PackageAnalysisResults PA
+            LEFT JOIN (
+                SELECT PackageName, PackagePath,
+                       SUM(TaskCount) TaskCount,
+                       SUM(ContainerCount) ContainerCount,
+                       SUM(ComponentCount) ComponentCount
+                FROM (
+                    SELECT PT.PackageName, PT.PackagePath,
+                           SUM(CASE WHEN TaskType <> 'ExecutePackageTask' THEN 1 ELSE 0 END) AS TaskCount,
+                           0 AS ContainerCount,
+                           0 AS ComponentCount
+                    FROM PackageTaskDetails PT
+                    GROUP BY PT.PackageName, PT.PackagePath
+
+                    UNION ALL
+
+                    SELECT PT.PackageName, PT.PackagePath,
+                           1 AS TaskCount, 0, 0
+                    FROM PackageTaskDetails PT
+                    WHERE TaskType = 'ExecutePackageTask'
+
+                    UNION ALL
+
+                    SELECT PC.PackageName, PC.PackagePath,
+                           0, 1, 0
+                    FROM PackageContainerDetails PC
+                    WHERE PC.ContainerType = 'Sequence'
+
+                    UNION ALL
+
+                    SELECT PC.PackageName, PC.PackagePath,
+                           0, COUNT(1), 0
+                    FROM PackageContainerDetails PC
+                    WHERE PC.ContainerType <> 'Sequence'
+                    GROUP BY PackageName, PackagePath
+
+                    UNION ALL
+
+                    SELECT PC.PackageName, PC.PackagePath,
+                           0, 0, COUNT(DISTINCT ComponentName)
+                    FROM DataFlowTaskMappingDetails PC
+                    GROUP BY PackageName, PackagePath
+                ) A
+                GROUP BY PackageName, PackagePath
+            ) Final ON Final.PackageName = PA.PackageName
+            AND Final.PackagePath = PA.PackageFolder;
+            """
+
+            cursor.execute(connection_query)
+            conn.commit()
+            cursor.close()
+            conn.close()
+            print("Connection names updated in SQL.")
 
 class Program:
     @staticmethod
