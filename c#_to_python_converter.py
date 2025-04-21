@@ -362,6 +362,77 @@ class SSISPackageAnalyzer:
             })
         self.save_project_parameter_metadata(metadata, self.PackageDetailsFilePath)
 
+    def process_sequence_container(self, container, containers):
+        """
+        Recursively processes a Sequence container and counts the number of TaskHost elements within it.
+        """
+        task_count = 0
+
+        for executable in container.Executables:
+            if isinstance(executable, TaskHost):
+                task_count += 1
+            elif isinstance(executable, DtsContainer):
+                self.container_count += 1
+
+                if isinstance(executable, Sequence):
+                    task_count += self.process_sequence_container(executable, containers)
+
+                elif isinstance(executable, ForEachLoop):
+                    self.process_foreach_loop_container(executable, containers)
+
+                elif isinstance(executable, ForLoop):
+                    self.process_for_loop_container(executable, containers)
+
+        return task_count
+
+
+    def process_foreach_loop_container(self, container, containers):
+        """
+        Recursively processes a ForEachLoop container and counts the number of TaskHost elements within it.
+        """
+        task_count = 0
+
+        for executable in container.Executables:
+            if isinstance(executable, TaskHost):
+                task_count += 1
+            elif isinstance(executable, DtsContainer):
+                self.container_count += 1
+
+                if isinstance(executable, ForEachLoop):
+                    task_count += self.process_foreach_loop_container(executable, containers)
+
+                elif isinstance(executable, Sequence):
+                    self.process_sequence_container(executable, containers)
+
+                elif isinstance(executable, ForLoop):
+                    self.process_for_loop_container(executable, containers)
+
+        return task_count
+
+
+    def process_for_loop_container(self, container, containers):
+        """
+        Recursively processes a ForLoop container and counts the number of TaskHost elements within it.
+        """
+        task_count = 0
+
+        for executable in container.Executables:
+            if isinstance(executable, TaskHost):
+                task_count += 1
+            elif isinstance(executable, DtsContainer):
+                self.container_count += 1
+
+                if isinstance(executable, ForLoop):
+                    task_count += self.process_for_loop_container(executable, containers)
+
+                elif isinstance(executable, Sequence):
+                    self.process_sequence_container(executable, containers)
+
+                elif isinstance(executable, ForEachLoop):
+                    self.process_foreach_loop_container(executable, containers)
+
+        return task_count
+
     def measure_package_performance(self, package_obj):
         """
         Executes a mock package and returns the execution time as a timedelta object.
