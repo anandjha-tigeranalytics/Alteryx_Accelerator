@@ -196,7 +196,29 @@ class SSISPackageAnalyzer:
         print("Completed...")
 
     def truncate_table(self):
-        pass
+        if self.DataSaveType.upper() == "SQL":
+            import pyodbc
+            try:
+                conn = pyodbc.connect(self._connection_string)
+                cursor = conn.cursor()
+                connection_query = """
+                    TRUNCATE TABLE PackageAnalysisResults;
+                    TRUNCATE TABLE PackageTaskDetails;
+                    TRUNCATE TABLE PackageConnectionDetails;
+                    TRUNCATE TABLE PackageContainerDetails;
+                    TRUNCATE TABLE ProjectParameterDetails;
+                    TRUNCATE TABLE PackageVariableParameterDetails;
+                    TRUNCATE TABLE DataFlowTaskMappingDetails;
+                    TRUNCATE TABLE PrecedenceConstraintDetails;
+                    TRUNCATE TABLE EventTaskDetails;
+                """
+                cursor.execute(connection_query)
+                conn.commit()
+                cursor.close()
+                conn.close()
+                print("Truncated all metadata tables.")
+            except Exception as e:
+                self.log_error("SQL Truncate", e)
 
     def analyze_single_package(self, package_path):
         tree = ET.parse(package_path)
