@@ -361,6 +361,143 @@ class SSISPackageAnalyzer:
             })
         self.save_project_parameter_metadata(metadata, self.PackageDetailsFilePath)
 
+    def save_package_task_metadata(self, result, file_path):
+        if self.DataSaveType.upper() == "EXCEL":
+            tasks = result.get("ExtractTaskDetails", [])
+            workbook_exists = os.path.exists(file_path)
+
+            for task in tasks:
+                if task.get("TaskName"):
+                    wb = load_workbook(file_path) if workbook_exists else Workbook()
+                    if not wb.sheetnames:
+                        wb.remove(wb.active)
+
+                    sheet_name = "PackageTaskDetails"
+                    if sheet_name in wb.sheetnames:
+                        ws = wb[sheet_name]
+                    else:
+                        ws = wb.create_sheet(sheet_name)
+                        ws.append([
+                            "PackageName", "PackagePath", "TaskName", "TaskType", "ContainerName",
+                            "TaskConnectionName", "SqlQuery", "Variables", "Parameters", "Expressions",
+                            "DataFlowDaskSourceName", "DataFlowTaskSourceType", "DataFlowTaskTargetName",
+                            "DataFlowTaskTargetType", "DataFlowTaskTargetTable", "DataFlowDaskSourceConnectionName",
+                            "DataFlowDaskTargetConnectionName", "ResultSetDetails", "TaskComponentDetails"
+                        ])
+
+                    rows = list(ws.iter_rows(min_row=2, values_only=True))
+                    record_exists = any(
+                        row[0] == task.get("PackageName") and
+                        row[1] == task.get("PackagePath") and
+                        row[2] == task.get("TaskName") and
+                        row[3] == task.get("TaskType") and
+                        row[4] == task.get("ContainerName")
+                        for row in rows
+                    )
+
+                    if not record_exists:
+                        ws.append([
+                            task.get("PackageName"), task.get("PackagePath"), task.get("TaskName"),
+                            task.get("TaskType"), task.get("ContainerName"), task.get("ConnectionName"),
+                            task.get("TaskSqlQuery"), task.get("Variables"), task.get("Parameters"),
+                            task.get("Expressions"), task.get("SourceComponent"), task.get("SourceType"),
+                            task.get("TargetComponent"), task.get("TargetType"), task.get("TargetTable"),
+                            task.get("SourceConnectionName"), task.get("TargetConnectionName"),
+                            task.get("ResultSetDetails"), task.get("TaskComponentDetails")
+                        ])
+                        wb.save(file_path)
+
+                if task.get("ContainerName"):
+                    wb = load_workbook(file_path) if os.path.exists(file_path) else Workbook()
+                    if not wb.sheetnames:
+                        wb.remove(wb.active)
+                    sheet_name = "PackageContainerDetails"
+                    if sheet_name in wb.sheetnames:
+                        ws = wb[sheet_name]
+                    else:
+                        ws = wb.create_sheet(sheet_name)
+                        ws.append([
+                            "PackageName", "PackagePath", "ContainerName",
+                            "ContainerType", "ContainerExpressions", "ContainerEnumerator"
+                        ])
+
+                    rows = list(ws.iter_rows(min_row=2, values_only=True))
+                    record_exists = any(
+                        row[0] == task.get("PackageName") and
+                        row[1] == task.get("PackagePath") and
+                        row[2] == task.get("ContainerName") and
+                        row[3] == task.get("ContainerType") and
+                        row[4] == task.get("ContainerExpression") and
+                        row[5] == task.get("ContainerEnum")
+                        for row in rows
+                    )
+
+                    if not record_exists:
+                        ws.append([
+                            task.get("PackageName"), task.get("PackagePath"), task.get("ContainerName"),
+                            task.get("ContainerType"), task.get("ContainerExpression"), task.get("ContainerEnum")
+                        ])
+                        wb.save(file_path)
+
+        elif self.DataSaveType.upper() == "SQL":
+            conn = pyodbc.connect(self._connection_string)
+            cursor = conn.cursor()
+
+            for task in result.get("ExtractTaskDetails", []):
+                if task.get("TaskName"):
+                    task_query = """
+                        INSERT INTO PackageTaskDetails (
+                            PackageName, TaskName, TaskType, SqlQuery, ContainerName, PackagePath,
+                            Variables, Parameters, Expressions, DataFlowDaskSourceName, DataFlowTaskSourceType,
+                            DataFlowTaskTargetName, DataFlowTaskTargetType, DataFlowTaskTargetTable,
+                            ResultSetDetails, DataFlowDaskSourceConnectionName,
+                            DataFlowDaskTargetConnectionName, TaskConnectionName, TaskComponentDetails
+                        )
+                        SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                        WHERE NOT EXISTS (
+                            SELECT 1 FROM PackageTaskDetails
+                            WHERE ContainerName = ? AND PackageName = ? AND PackagePath = ? AND TaskName = ?
+                        )
+                    """
+                    values = [
+                        task.get("PackageName"), task.get("TaskName"), task.get("TaskType"),
+                        task.get("TaskSqlQuery"), task.get("ContainerName"), task.get("PackagePath"),
+                        task.get("Variables"), task.get("Parameters"), task.get("Expressions"),
+                        task.get("SourceComponent"), task.get("SourceType"), task.get("TargetComponent"),
+                        task.get("TargetType"), task.get("TargetTable"), task.get("ResultSetDetails"),
+                        task.get("SourceConnectionName"), task.get("TargetConnectionName"),
+                        task.get("ConnectionName"), task.get("TaskComponentDetails"),
+                        task.get("ContainerName"), task.get("PackageName"), task.get("PackagePath"), task.get("TaskName")
+                    ]
+                    cursor.execute(task_query, values)
+
+                if task.get("ContainerName"):
+                    container_query = """
+                        INSERT INTO PackageContainerDetails (
+                            PackageName, ContainerName, ContainerType,
+                            ContainerExpressions, ContainerEnumerator, PackagePath
+                        )
+                        SELECT ?, ?, ?, ?, ?, ?
+                        WHERE NOT EXISTS (
+                            SELECT 1 FROM PackageContainerDetails
+                            WHERE ContainerName = ? AND ContainerType = ? AND PackageName = ?
+                            AND PackagePath = ? AND ContainerExpressions = ISNULL(?, '')
+                            AND ContainerEnumerator = ISNULL(?, '')
+                        )
+                    """
+                    values = [
+                        task.get("PackageName"), task.get("ContainerName"), task.get("ContainerType"),
+                        task.get("ContainerExpression"), task.get("ContainerEnum"), task.get("PackagePath"),
+                        task.get("ContainerName"), task.get("ContainerType"), task.get("PackageName"),
+                        task.get("PackagePath"), task.get("ContainerExpression"), task.get("ContainerEnum")
+                    ]
+                    cursor.execute(container_query, values)
+
+            conn.commit()
+            cursor.close()
+            conn.close()
+            print("Saved Package Task and Container metadata to SQL Server.")
+
     def save_project_parameter_metadata(self, result, file_path):
         if self.DataSaveType.upper() == "EXCEL":
             for param_info in result.get("ProjectParameterDetails", []):
