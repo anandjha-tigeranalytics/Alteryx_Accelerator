@@ -414,8 +414,64 @@ class SSISPackageAnalyzer:
             conn.close()
             print("Saved project parameters to SQL Server.")
 
-    def save_connections_metadata(self, metadata, file_path):
-        print(f"Saving connection metadata: {metadata}")
+    def save_connections_metadata(self, result, file_path):
+        if self.DataSaveType.upper() == "EXCEL":
+            for conn in result.get("Connections", []):
+                if os.path.exists(file_path):
+                    wb = load_workbook(file_path)
+                else:
+                    wb = Workbook()
+                    wb.remove(wb.active)
+
+                if "PackageConnectionDetails" in wb.sheetnames:
+                    ws = wb["PackageConnectionDetails"]
+                else:
+                    ws = wb.create_sheet("PackageConnectionDetails")
+                    ws.append([
+                        "PackageName", "PackagePath", "ConnectionName", "ConnectionType",
+                        "ConnectionExpressions", "ConnectionString", "ConnectionID", "IsProjectConnection"
+                    ])
+
+                row = [
+                    result.get("PackageName", ""),
+                    result.get("PackagePath", ""),
+                    conn.get("ConnectionName", ""),
+                    conn.get("ConnectionType", ""),
+                    conn.get("ConnectionExpressions", ""),
+                    conn.get("ConnectionString", ""),
+                    conn.get("ConnectionID", ""),
+                    conn.get("IsProjectConnection", "")
+                ]
+                ws.append(row)
+                wb.save(file_path)
+
+            print(f"Saved connection metadata to Excel: {file_path}")
+
+        elif self.DataSaveType.upper() == "SQL":
+            conn_db = pyodbc.connect(self._connection_string)
+            cursor = conn_db.cursor()
+
+            for conn_info in result.get("Connections", []):
+                cursor.execute("""
+                    INSERT INTO PackageConnectionDetails (
+                        PackageName, ConnectionName, ConnectionType, PackagePath, 
+                        ConnectionExpressions, ConnectionString, ConnectionDTSID, IsProjectConnection
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    result.get("PackageName", ""),
+                    conn_info.get("ConnectionName", ""),
+                    conn_info.get("ConnectionType", ""),
+                    result.get("PackagePath", ""),
+                    conn_info.get("ConnectionExpressions", ""),
+                    conn_info.get("ConnectionString", ""),
+                    conn_info.get("ConnectionID", ""),
+                    conn_info.get("IsProjectConnection", "")
+                ))
+
+            conn_db.commit()
+            cursor.close()
+            conn_db.close()
+            print("Saved connection metadata to SQL Server.")
 
     def log_error(self, file_path, exception):
         print(f"Error processing {file_path}: {str(exception)}")
