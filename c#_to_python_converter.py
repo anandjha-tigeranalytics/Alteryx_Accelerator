@@ -359,6 +359,116 @@ class SSISPackageAnalyzer:
             })
         self.save_project_parameter_metadata(metadata, self.PackageDetailsFilePath)
 
+
+    def save_dataflow_metadata(self, result, file_path):
+        if self.DataSaveType.upper() == "EXCEL":
+            for dataflow in result.DataFlowTaskDetails:
+                dataflow_file = os.path.join(
+                    file_path, dataflow.PackageName.replace(".dtsx", "_DFM.xlsx")
+                )
+                workbook_exists = os.path.exists(dataflow_file)
+
+                if workbook_exists:
+                    workbook = openpyxl.load_workbook(dataflow_file)
+                else:
+                    workbook = openpyxl.Workbook()
+                    workbook.remove(workbook.active)
+
+                sheet_name = "DataFlowTaskMappingDetails"
+                if sheet_name not in workbook.sheetnames:
+                    ws = workbook.create_sheet(sheet_name)
+                    ws.append([
+                        "PackageName", "PackagePath", "TaskName", "ColumnName", "ColumnType", "DataType",
+                        "ComponentName", "DataConversion", "ComponentPropertyDetails",
+                        "ColumnPropertyDetails", "isEventHandler"
+                    ])
+                else:
+                    ws = workbook[sheet_name]
+
+                # Check for existing record
+                exists = False
+                for row in ws.iter_rows(min_row=2, values_only=True):
+                    if (
+                        row[0] == dataflow.PackageName and
+                        row[1] == dataflow.PackagePath and
+                        row[2] == dataflow.TaskName and
+                        row[3] == dataflow.ColumnName and
+                        row[4] == dataflow.ColumnType and
+                        row[5] == dataflow.DataType and
+                        row[6] == dataflow.componentName and
+                        row[7] == dataflow.DataConversion and
+                        row[8] == dataflow.componentPropertyDetails and
+                        row[9] == dataflow.ColumnPropertyDetails and
+                        row[10] == dataflow.isEventHandler
+                    ):
+                    exists = True
+                    break
+
+                if not exists:
+                    ws.append([
+                        dataflow.PackageName,
+                        dataflow.PackagePath,
+                        dataflow.TaskName,
+                        dataflow.ColumnName,
+                        dataflow.ColumnType,
+                        dataflow.DataType,
+                        dataflow.componentName,
+                        dataflow.DataConversion,
+                        dataflow.componentPropertyDetails,
+                        dataflow.ColumnPropertyDetails,
+                        dataflow.isEventHandler
+                    ])
+                    workbook.save(dataflow_file)
+
+        elif self.DataSaveType.upper() == "SQL":
+            conn = pyodbc.connect(self._connection_string)
+            cursor = conn.cursor()
+
+            for dataflow in result.DataFlowTaskDetails:
+                insert_query = """
+                    INSERT INTO DataFlowTaskMappingDetails (
+                        PackageName, TaskName, ColumnName, DataType, ComponentName, DataConversion, PackagePath, 
+                        ColumnType, isEventHandler, ComponentPropertyDetails, ColumnPropertyDetails
+                    )
+                    SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                    WHERE NOT EXISTS (
+                        SELECT 1 FROM DataFlowTaskMappingDetails
+                        WHERE ISNULL(ColumnName, '') = ISNULL(?, '') AND ISNULL(DataType, '') = ISNULL(?, '')
+                        AND ISNULL(PackageName, '') = ISNULL(?, '') AND ISNULL(PackagePath, '') = ISNULL(?, '')
+                        AND ISNULL(ColumnType, '') = ISNULL(?, '') AND ISNULL(ComponentName, '') = ISNULL(?, '')
+                        AND ISNULL(TaskName, '') = ISNULL(?, '') AND ISNULL(ComponentPropertyDetails, '') = ISNULL(?, '')
+                        AND ISNULL(ColumnPropertyDetails, '') = ISNULL(?, '')
+                    )
+                """
+                values = [
+                    dataflow.PackageName,
+                    dataflow.TaskName,
+                    dataflow.ColumnName,
+                    dataflow.DataType,
+                    dataflow.componentName,
+                    dataflow.DataConversion,
+                    dataflow.PackagePath,
+                    dataflow.ColumnType,
+                    dataflow.isEventHandler,
+                    dataflow.componentPropertyDetails,
+                    dataflow.ColumnPropertyDetails,
+                    # WHERE NOT EXISTS values
+                    dataflow.ColumnName,
+                    dataflow.DataType,
+                    dataflow.PackageName,
+                    dataflow.PackagePath,
+                    dataflow.ColumnType,
+                    dataflow.componentName,
+                    dataflow.TaskName,
+                    dataflow.componentPropertyDetails,
+                    dataflow.ColumnPropertyDetails
+                ]
+                cursor.execute(insert_query, values)
+
+            conn.commit()
+            cursor.close()
+            conn.close()
+
     def save_precedence_constraint_metadata(self, result, file_path):
         if self.DataSaveType.upper() == "EXCEL":
             workbook_exists = os.path.exists(file_path)
