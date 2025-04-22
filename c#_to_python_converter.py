@@ -2873,16 +2873,17 @@ class Program:
 def main():
     connection_string = ""
     output_folder = ""
-    package_folder = input("Enter the Package Folder path:\n")
-    data_save_type = input("Enter the Data Save Type (SQL or EXCEL):\n")
 
-    if data_save_type.upper() == "SQL":
+    package_folder = input("Enter the Package Folder path:\n")
+    data_save_type = input("Enter the Data Save Type (SQL or EXCEL):\n").strip().upper()
+
+    if data_save_type == "SQL":
         connection_string = input("Enter the Connection String:\n")
-    elif data_save_type.upper() == "EXCEL":
+    elif data_save_type == "EXCEL":
         output_folder = input("Enter the Output Folder path:\n")
     else:
         print("Wrong Input")
-        threading.Event().wait(5)
+        time.sleep(5)
         return
 
     package_analysis_file_path = os.path.join(output_folder, "PackageAnalysisResult.xlsx")
