@@ -363,6 +363,148 @@ class SSISPackageAnalyzer:
             })
         self.save_project_parameter_metadata(metadata, self.PackageDetailsFilePath
 
+    
+
+                                             
+    def extract_event_handlers_for_package(package):
+        if package.EventHandlers.Count > 0:
+            event_handler_name = package.Name
+            event_handler_type = "Package"
+            event_name = ""
+
+            for event_handler in package.EventHandlers:
+                event_name = event_handler.Name
+
+                for event_executable in event_handler.Executables:
+                    if isinstance(event_executable, TaskHost):
+                        extract_event_task_details(
+                            event_executable,
+                            event_handler_name,
+                            event_handler_type,
+                            event_name,
+                            "",
+                            "",
+                            "",
+                            ""
+                        )
+
+                    elif isinstance(event_executable, Sequence):
+                        extract_event_sequence_task_details(
+                            event_executable,
+                            event_handler_name,
+                            event_handler_type,
+                            event_name
+                        )
+
+                    elif isinstance(event_executable, ForEachLoop):
+                        extract_event_foreach_task_details(
+                            event_executable,
+                            event_handler_name,
+                            event_handler_type,
+                            event_name
+                        )
+
+                    elif isinstance(event_executable, ForLoop):
+                        extract_event_for_loop_task_details(
+                            event_executable,
+                            event_handler_name,
+                            event_handler_type,
+                            event_name
+                        )
+                               
+    def extract_event_handlers_for_sequence(sequence):
+        if sequence.EventHandlers.Count > 0:
+            event_handler_name = sequence.Name
+            event_handler_type = "Sequence"
+            event_name = ""
+
+            for event_handler in sequence.EventHandlers:
+                event_name = event_handler.Name
+
+                for event_executable in event_handler.Executables:
+                    if isinstance(event_executable, TaskHost):
+                        extract_event_task_details(
+                            event_executable,
+                            event_handler_name,
+                            event_handler_type,
+                            event_name,
+                            "",
+                            "",
+                            "",
+                            ""
+                        )
+
+                    elif isinstance(event_executable, Sequence):
+                        extract_event_sequence_task_details(
+                            event_executable,
+                            event_handler_name,
+                            event_handler_type,
+                            event_name
+                        )
+
+                    elif isinstance(event_executable, ForEachLoop):
+                        extract_event_foreach_task_details(
+                            event_executable,
+                            event_handler_name,
+                            event_handler_type,
+                            event_name
+                        )
+
+                    elif isinstance(event_executable, ForLoop):
+                        extract_event_for_loop_task_details(
+                            event_executable,
+                            event_handler_name,
+                            event_handler_type,
+                            event_name
+                        )
+
+                            
+    def extract_event_handlers_for_foreach_loop(foreach_loop):
+        if foreach_loop.EventHandlers.Count > 0:
+            event_handler_name = foreach_loop.Name
+            event_handler_type = "ForEachLoop"
+            event_name = ""
+
+            for event_handler in foreach_loop.EventHandlers:
+                event_name = event_handler.Name
+
+                for event_executable in event_handler.Executables:
+                    if isinstance(event_executable, TaskHost):
+                        extract_event_task_details(
+                            event_executable,
+                            event_handler_name,
+                            event_handler_type,
+                            event_name,
+                            "",
+                            "",
+                            "",
+                            ""
+                        )
+
+                    elif isinstance(event_executable, Sequence):
+                        extract_event_sequence_task_details(
+                            event_executable,
+                            event_handler_name,
+                            event_handler_type,
+                            event_name
+                        )
+
+                    elif isinstance(event_executable, ForEachLoop):
+                        extract_event_foreach_task_details(
+                            event_executable,
+                            event_handler_name,
+                            event_handler_type,
+                            event_name
+                        )
+
+                    elif isinstance(event_executable, ForLoop):
+                        extract_event_for_loop_task_details(
+                            event_executable,
+                            event_handler_name,
+                            event_handler_type,
+                            event_name
+                        )
+                        
                                              
     def extract_event_handlers_for_for_loop(for_loop):
         if for_loop.EventHandlers.Count > 0:
