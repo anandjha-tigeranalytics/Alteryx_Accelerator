@@ -158,50 +158,7 @@ class SSISPackageAnalyzer:
         self.ComponentNameCheck = []
         self.variables_metadata = []
 
-    def analyze_all_packages(self):
-        self.truncate_table()
-        directories = [
-            os.path.join(dp, f) for dp, dn, _ in os.walk(self._package_folder) 
-            for f in dn
-        ]
-        for directory in directories:
-            if "\\obj\\" in directory.lower():
-                continue
-            try:
-                package_files = [os.path.join(directory, f) for f in os.listdir(directory) if f.endswith(".dtsx")]
-                connection_manager_files = [os.path.join(directory, f) for f in os.listdir(directory) if f.endswith(".conmgr")]
-                param_files = [os.path.join(directory, f) for f in os.listdir(directory) if f.endswith(".params")]
-
-                for package_path in package_files:
-                    if package_path in self.processed_package_paths:
-                        continue
-                    try:
-                        self.processed_package_paths.add(package_path)
-                        self.analyze_single_package(package_path)
-                    except Exception as ex:
-                        self.log_error(package_path, ex)
-
-                for connection_manager_path in connection_manager_files:
-                    if connection_manager_path in self.processed_package_paths:
-                        continue
-                    try:
-                        self.processed_package_paths.add(connection_manager_path)
-                        self.analyze_single_connection_manager(connection_manager_path)
-                    except Exception as ex:
-                        self.log_error(connection_manager_path, ex)
-
-                for param_file in param_files:
-                    if param_file in self.processed_package_paths:
-                        continue
-                    try:
-                        self.processed_package_paths.add(param_file)
-                        self.analyze_param_manager(param_file)
-                    except Exception as ex:
-                        self.log_error(param_file, ex)
-            except Exception as ex:
-                print(f"Error accessing directory {directory}: {str(ex)}")
-        self.save_variable_metadata(self.PackageDetailsFilePath)
-        print("Completed...")
+   
 
     def truncate_table(self):
         if self.DataSaveType.upper() == "SQL":
@@ -252,7 +209,6 @@ class SSISPackageAnalyzer:
             df.to_excel(excel_path, index=False)
             print(f"Saved variable metadata to {excel_path}")
         elif self.DataSaveType.upper() == "SQL":
-            import pyodbc
             conn = pyodbc.connect(self._connection_string)
             cursor = conn.cursor()
 
@@ -277,17 +233,107 @@ class SSISPackageAnalyzer:
             conn.close()
             print("Saved variable metadata to SQL Server")
 
-    def analyze_single_connection_manager(self, connection_manager_path):
-        doc = minidom.parse(connection_manager_path)
-        root = doc.documentElement
 
-        ns = {
-            'DTS': 'www.microsoft.com/SqlServer/Dts'
+    def analyze_all_packages(package_folder):
+        truncate_table()  # Your function to truncate the target table
+
+        for root, dirs, files in os.walk(package_folder):
+            if "\\obj\\" in root.lower():
+                continue  # Skip obj folders
+
+            try:
+                package_files = [os.path.join(root, f) for f in files if f.endswith(".dtsx")]
+                connection_manager_files = [os.path.join(root, f) for f in files if f.endswith(".conmgr")]
+                param_files = [os.path.join(root, f) for f in files if f.endswith(".params")]
+
+                for package_path in package_files:
+                    if package_path in processed_package_paths:
+                        continue
+                    try:
+                        processed_package_paths.add(package_path)
+                        analyze_single_package(package_path)
+                    except Exception as ex:
+                        log_error(package_path, ex)
+
+                for conn_path in connection_manager_files:
+                    if conn_path in processed_package_paths:
+                        continue
+                    try:
+                        processed_package_paths.add(conn_path)
+                        analyze_single_connection_manager(conn_path)
+                    except Exception as ex:
+                        log_error(conn_path, ex)
+
+                for param_path in param_files:
+                    if param_path in processed_package_paths:
+                        continue
+                    try:
+                        processed_package_paths.add(param_path)
+                        analyze_param_manager(param_path)
+                    except Exception as ex:
+                        log_error(param_path, ex)
+
+            except Exception as ex:
+                print(f"Error accessing directory {root}: {ex}")
+
+        save_update_connection_name(package_details_file_path)
+        print("Completed...")
+
+    
+    def analyze_param_manager(param_file_path):
+        tree = ET.parse(param_file_path)
+        root = tree.getroot()
+    
+        ns = {'SSIS': 'www.microsoft.com/SqlServer/SSIS'}
+
+        metadata = {
+            "ProjectParameterDetails": [],
+            "PackagePath": os.path.dirname(param_file_path),
+            "PackageName": os.path.basename(param_file_path)
         }
 
-        def get_node_value(xpath):
-            nodes = root.getElementsByTagNameNS(ns['DTS'], xpath)
-            return nodes[0].nodeValue if nodes and nodes[0].firstChild else ""
+        # SSIS DataType ID to readable format mapping
+        ssis_data_types = {
+            "3": "Boolean",
+            "6": "Byte",
+            "16": "DateTime",
+            "15": "Decimal",
+            "14": "Double",
+            "7": "Int16",
+            "9": "Int32",
+            "11": "Int64",
+            "5": "SByte",
+            "13": "Single",
+            "18": "String",
+            "10": "Unit32",
+            "12": "Unit64"
+        }
+
+        parameter_nodes = root.findall(".//SSIS:Parameter", ns)
+        for param in parameter_nodes:
+            param_name = param.attrib.get("{www.microsoft.com/SqlServer/SSIS}Name")
+            value_node = param.find("SSIS:Properties/SSIS:Property[@SSIS:Name='Value']", ns)
+            datatype_node = param.find("SSIS:Properties/SSIS:Property[@SSIS:Name='DataType']", ns)
+
+            value = value_node.text if value_node is not None else None
+            datatype_code = datatype_node.text if datatype_node is not None else None
+            datatype_name = ssis_data_types.get(datatype_code, datatype_code)
+
+            metadata["ProjectParameterDetails"].append({
+                "ParameterName": param_name,
+                "DataType": datatype_name,
+                "Value": value
+            })
+
+        save_project_parameter_metadata(metadata, package_details_file_path)
+
+
+    def analyze_single_connection_manager(connection_manager_path):
+        tree = ET.parse(connection_manager_path)
+        root = tree.getroot()
+
+        # Define the namespace mapping
+        ns = {'DTS': 'www.microsoft.com/SqlServer/Dts'}
 
         connection_string_name = ""
         connection_name = ""
@@ -295,63 +341,46 @@ class SSISPackageAnalyzer:
         connection_expression = ""
         connection_type = ""
 
-        for node in root.getElementsByTagNameNS(ns['DTS'], 'ConnectionManager'):
-            connection_string_name = node.getAttributeNS(ns['DTS'], 'ConnectionString')
-            connection_name = node.getAttributeNS(ns['DTS'], 'ObjectName')
-            connection_type = node.getAttributeNS(ns['DTS'], 'CreationName')
-            connection_id = node.getAttributeNS(ns['DTS'], 'DTSID')
+        # Extract specific attributes using XPath
+        conn_string_node = root.find(".//DTS:ConnectionManager/DTS:ObjectData/DTS:ConnectionManager", ns)
+        connection_name_node = root.find(".//DTS:ConnectionManager", ns)
+        connection_type_node = root.find(".//DTS:ConnectionManager", ns)
+        connection_id_node = root.find(".//DTS:ConnectionManager", ns)
 
-        for node in root.getElementsByTagNameNS(ns['DTS'], 'PropertyExpression'):
-            name_attr = node.getAttributeNS(ns['DTS'], 'Name')
-            value = node.firstChild.nodeValue if node.firstChild else ""
-            connection_expression += f"{name_attr} : {value} "
+        if conn_string_node is not None:
+            connection_string_name = conn_string_node.attrib.get("{www.microsoft.com/SqlServer/Dts}ConnectionString", "")
+
+        if connection_name_node is not None:
+            connection_name = connection_name_node.attrib.get("{www.microsoft.com/SqlServer/Dts}ObjectName", "")
+
+        if connection_type_node is not None:
+            connection_type = connection_type_node.attrib.get("{www.microsoft.com/SqlServer/Dts}CreationName", "")
+
+        if connection_id_node is not None:
+            connection_id = connection_id_node.attrib.get("{www.microsoft.com/SqlServer/Dts}DTSID", "")
+
+        # Handle property expressions
+        for prop_expr_node in root.findall(".//DTS:PropertyExpression", ns):
+            name = prop_expr_node.attrib.get("{www.microsoft.com/SqlServer/Dts}Name", "Name not found.")
+            value = prop_expr_node.text or ""
+            connection_expression += f"{name} : {value} "
 
         metadata = {
-            'Connections': [
-                {
-                    'ConnectionName': connection_name,
-                    'ConnectionString': connection_string_name,
-                    'ConnectionExpressions': connection_expression,
-                    'ConnectionType': connection_type,
-                    'ConnectionID': connection_id,
-                    'IsProjectConnection': "1"
-                }
-            ],
-            'PackagePath': os.path.dirname(connection_manager_path),
-            'PackageName': os.path.basename(connection_manager_path),
+            "Connections": [],
+            "PackagePath": os.path.dirname(connection_manager_path),
+            "PackageName": os.path.basename(connection_manager_path)
         }
 
-        self.save_connections_metadata(metadata, self.PackageDetailsFilePath)
+        metadata["Connections"].append({
+            "ConnectionName": connection_name,
+            "ConnectionString": connection_string_name,
+            "ConnectionExpressions": connection_expression.strip(),
+            "ConnectionType": connection_type,
+            "ConnectionID": connection_id,
+            "IsProjectConnection": "1"
+        })
 
-    def analyze_param_manager(self, param_file):
-        tree = ET.parse(param_file)
-        root = tree.getroot()
-        ns = {'SSIS': 'www.microsoft.com/SqlServer/SSIS'}
-        metadata = {
-            'ProjectParameterDetails': [],
-            'PackagePath': os.path.dirname(param_file),
-            'PackageName': os.path.basename(param_file),
-        }
-        parameters = root.findall(".//SSIS:Parameter", ns)
-        type_map = {
-            "3": "Boolean", "6": "Byte", "16": "DateTime", "15": "Decimal",
-            "14": "Double", "7": "Int16", "9": "Int32", "11": "Int64",
-            "5": "SByte", "13": "Single", "18": "String", "10": "Unit32",
-            "12": "Unit64"
-        }
-        for parameter in parameters:
-            parameter_name = parameter.attrib.get('{www.microsoft.com/SqlServer/SSIS}Name')
-            value_node = parameter.find("SSIS:Properties/SSIS:Property[@SSIS:Name='Value']", ns)
-            datatype_node = parameter.find("SSIS:Properties/SSIS:Property[@SSIS:Name='DataType']", ns)
-            value = value_node.text if value_node is not None else None
-            datatype = datatype_node.text if datatype_node is not None else None
-            datatype = type_map.get(datatype, datatype)
-            metadata['ProjectParameterDetails'].append({
-                'ParameterName': parameter_name,
-                'DataType': datatype,
-                'Value': value
-            })
-        self.save_project_parameter_metadata(metadata, self.PackageDetailsFilePath
+        save_connections_metadata(metadata, package_details_file_path)
 
 
     def analyze_single_package(package_path):
