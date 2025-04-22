@@ -363,9 +363,29 @@ class SSISPackageAnalyzer:
             })
         self.save_project_parameter_metadata(metadata, self.PackageDetailsFilePath
 
-    
+    def get_package_variables(package: Package) -> list:
+        variables = []
 
-                                             
+        for variable in package.variables:
+            if not variable.system_variable:
+                variables.append(VariableInfo(
+                    name=variable.name,
+                    value=str(variable.value) if variable.value is not None else None,
+                    data_type=str(variable.data_type),
+                    namespace=variable.namespace,
+                    is_parameter=0
+                ))
+
+        for parameter in package.parameters:
+            variables.append(VariableInfo(
+                name=parameter.name,
+                value=str(parameter.value) if parameter.value is not None else None,
+                data_type=str(parameter.data_type),
+                is_parameter=1
+            ))
+
+        return variables
+                             
     def count_sequence_container_tasks(package: Package) -> list:
         tasks_in_sequence = []
 
