@@ -2190,8 +2190,8 @@ class SSISPackageAnalyzer:
                         row[9] == dataflow.ColumnPropertyDetails and
                         row[10] == dataflow.isEventHandler
                     ):
-                    exists = True
-                    break
+                        exists = True
+                        break
 
                 if not exists:
                     ws.append([
