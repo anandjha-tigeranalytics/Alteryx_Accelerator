@@ -363,12 +363,362 @@ class SSISPackageAnalyzer:
             })
         self.save_project_parameter_metadata(metadata, self.PackageDetailsFilePath
 
-
-    
-
-
-
                                              
+    def extract_event_handlers_for_for_loop(for_loop):
+        if for_loop.EventHandlers.Count > 0:
+            event_handler_name = for_loop.Name
+            event_handler_type = "ForLoop"
+            event_name = ""
+
+            for event_handler in for_loop.EventHandlers:
+                event_name = event_handler.Name
+
+                for event_executable in event_handler.Executables:
+                    if isinstance(event_executable, TaskHost):
+                        extract_event_task_details(
+                            event_executable,
+                            event_handler_name,
+                            event_handler_type,
+                            event_name,
+                            "",
+                            "",
+                            "",
+                            ""
+                        )
+
+                    elif isinstance(event_executable, Sequence):
+                        extract_event_sequence_task_details(
+                            event_executable,
+                            event_handler_name,
+                            event_handler_type,
+                            event_name
+                        )
+
+                    elif isinstance(event_executable, ForEachLoop):
+                        extract_event_foreach_task_details(
+                            event_executable,
+                            event_handler_name,
+                            event_handler_type,
+                            event_name
+                        )
+
+                    elif isinstance(event_executable, ForLoop):
+                        extract_event_for_loop_task_details(
+                            event_executable,
+                            event_handler_name,
+                            event_handler_type,
+                            event_name
+                        )
+
+
+    def extract_event_handlers_for_task(taskhost):
+        if taskhost.EventHandlers.Count > 0:
+            event_handler_name = taskhost.Name
+
+            if isinstance(taskhost.InnerObject, MainPipe):
+                event_handler_type = "DataFlowTask"
+            elif isinstance(taskhost.InnerObject, ExecutePackageTask):
+                event_handler_type = "ExecutePackageTask"
+            else:
+                event_handler_type = type(taskhost.InnerObject).__name__
+
+            for event_handler in taskhost.EventHandlers:
+                event_name = event_handler.Name
+
+                for event_executable in event_handler.Executables:
+                    if isinstance(event_executable, TaskHost):
+                        extract_event_task_details(
+                            event_executable,
+                            event_handler_name,
+                            event_handler_type,
+                            event_name,
+                            "",
+                            "",
+                            "",
+                            ""
+                        )
+
+                    elif isinstance(event_executable, Sequence):
+                        extract_event_sequence_task_details(
+                            event_executable,
+                            event_handler_name,
+                            event_handler_type,
+                            event_name
+                        )
+
+                    elif isinstance(event_executable, ForEachLoop):
+                        extract_event_foreach_task_details(
+                            event_executable,
+                            event_handler_name,
+                            event_handler_type,
+                            event_name
+                        )
+
+                    elif isinstance(event_executable, ForLoop):
+                        extract_event_for_loop_task_details(
+                            event_executable,
+                            event_handler_name,
+                            event_handler_type,
+                            event_name
+                        )
+
+
+    def extract_precedence_constraints_for_task(package):
+        metadata = PackageAnalysisResult()
+        metadata.PrecedenceConstraintDetails = []
+
+        if package.PrecedenceConstraints.Count == 0:
+            for executable in package.Executables:
+                if isinstance(executable, Sequence):
+                    extract_precedence_constraints_for_sequence(executable)
+                elif isinstance(executable, ForEachLoop):
+                    extract_precedence_constraints_for_foreach(executable)
+                elif isinstance(executable, ForLoop):
+                    extract_precedence_constraints_for_forloop(executable)
+        else:
+            for precedence_constraint in package.PrecedenceConstraints:
+                precedence_constraint_from = ""
+                precedence_constraint_to = ""
+                precedence_constraint_value = str(precedence_constraint.Value)
+                precedence_constraint_expression = str(precedence_constraint.Expression)
+                precedence_constraint_eval_op = str(precedence_constraint.EvalOp)
+                precedence_constraint_logical_and = str(precedence_constraint.LogicalAnd)
+
+                # FROM
+                if isinstance(precedence_constraint.PrecedenceExecutable, TaskHost):
+                    precedence_constraint_from = precedence_constraint.PrecedenceExecutable.Name
+                elif isinstance(precedence_constraint.PrecedenceExecutable, Sequence):
+                    precedence_constraint_from = precedence_constraint.PrecedenceExecutable.Name
+                    extract_precedence_constraints_for_sequence(precedence_constraint.PrecedenceExecutable)
+                elif isinstance(precedence_constraint.PrecedenceExecutable, ForEachLoop):
+                    precedence_constraint_from = precedence_constraint.PrecedenceExecutable.Name
+                    extract_precedence_constraints_for_foreach(precedence_constraint.PrecedenceExecutable)
+                elif isinstance(precedence_constraint.PrecedenceExecutable, ForLoop):
+                    precedence_constraint_from = precedence_constraint.PrecedenceExecutable.Name
+                    extract_precedence_constraints_for_forloop(precedence_constraint.PrecedenceExecutable)
+
+                # TO
+                if isinstance(precedence_constraint.ConstrainedExecutable, TaskHost):
+                    precedence_constraint_to = precedence_constraint.ConstrainedExecutable.Name
+                elif isinstance(precedence_constraint.ConstrainedExecutable, Sequence):
+                    precedence_constraint_to = precedence_constraint.ConstrainedExecutable.Name
+                    extract_precedence_constraints_for_sequence(precedence_constraint.ConstrainedExecutable)
+                elif isinstance(precedence_constraint.ConstrainedExecutable, ForEachLoop):
+                    precedence_constraint_to = precedence_constraint.ConstrainedExecutable.Name
+                    extract_precedence_constraints_for_foreach(precedence_constraint.ConstrainedExecutable)
+                elif isinstance(precedence_constraint.ConstrainedExecutable, ForLoop):
+                    precedence_constraint_to = precedence_constraint.ConstrainedExecutable.Name
+                    extract_precedence_constraints_for_forloop(precedence_constraint.ConstrainedExecutable)
+
+                # Add to metadata
+                metadata.PrecedenceConstraintDetails.append(PrecedenceConstraintInfo(
+                    PackageName=PackageName,
+                    PackagePath=PackagePath,
+                    PrecedenceConstraintFrom=precedence_constraint_from,
+                    PrecedenceConstraintTo=precedence_constraint_to,
+                    PrecedenceConstraintValue=precedence_constraint_value,
+                    PrecedenceConstraintExpression=precedence_constraint_expression,
+                    PrecedenceConstraintEvalOP=precedence_constraint_eval_op,
+                    PrecedenceConstraintLogicalAnd=precedence_constraint_logical_and,
+                    ContainerName=""
+                ))
+
+        save_precedence_constraint_metadata(metadata, PackageDetailsFilePath)
+
+        return metadata.PrecedenceConstraintDetails
+
+
+    def extract_precedence_constraints_for_sequence(sequence):
+        metadata = PackageAnalysisResult()
+        metadata.PrecedenceConstraintDetails = []
+
+        if sequence.PrecedenceConstraints.Count == 0:
+            for executable in sequence.Executables:
+                if isinstance(executable, Sequence):
+                    extract_precedence_constraints_for_sequence(executable)
+                elif isinstance(executable, ForEachLoop):
+                    extract_precedence_constraints_for_foreach(executable)
+                elif isinstance(executable, ForLoop):
+                    extract_precedence_constraints_for_forloop(executable)
+        else:
+            for precedence_constraint in sequence.PrecedenceConstraints:
+                precedence_constraint_from = ""
+                precedence_constraint_to = ""
+                precedence_constraint_value = str(precedence_constraint.Value)
+                precedence_constraint_expression = str(precedence_constraint.Expression)
+                precedence_constraint_eval_op = str(precedence_constraint.EvalOp)
+                precedence_constraint_logical_and = str(precedence_constraint.LogicalAnd)
+
+                # FROM
+                if isinstance(precedence_constraint.PrecedenceExecutable, TaskHost):
+                    precedence_constraint_from = precedence_constraint.PrecedenceExecutable.Name
+                elif isinstance(precedence_constraint.PrecedenceExecutable, Sequence):
+                    precedence_constraint_from = precedence_constraint.PrecedenceExecutable.Name
+                    extract_precedence_constraints_for_sequence(precedence_constraint.PrecedenceExecutable)
+                elif isinstance(precedence_constraint.PrecedenceExecutable, ForEachLoop):
+                    precedence_constraint_from = precedence_constraint.PrecedenceExecutable.Name
+                    extract_precedence_constraints_for_foreach(precedence_constraint.PrecedenceExecutable)
+                elif isinstance(precedence_constraint.PrecedenceExecutable, ForLoop):
+                    precedence_constraint_from = precedence_constraint.PrecedenceExecutable.Name
+                    extract_precedence_constraints_for_forloop(precedence_constraint.PrecedenceExecutable)
+
+                # TO
+                if isinstance(precedence_constraint.ConstrainedExecutable, TaskHost):
+                    precedence_constraint_to = precedence_constraint.ConstrainedExecutable.Name
+                elif isinstance(precedence_constraint.ConstrainedExecutable, Sequence):
+                    precedence_constraint_to = precedence_constraint.ConstrainedExecutable.Name
+                    extract_precedence_constraints_for_sequence(precedence_constraint.ConstrainedExecutable)
+                elif isinstance(precedence_constraint.ConstrainedExecutable, ForEachLoop):
+                    precedence_constraint_to = precedence_constraint.ConstrainedExecutable.Name
+                    extract_precedence_constraints_for_foreach(precedence_constraint.ConstrainedExecutable)
+                elif isinstance(precedence_constraint.ConstrainedExecutable, ForLoop):
+                    precedence_constraint_to = precedence_constraint.ConstrainedExecutable.Name
+                    extract_precedence_constraints_for_forloop(precedence_constraint.ConstrainedExecutable)
+
+                # Add to metadata
+                metadata.PrecedenceConstraintDetails.append(PrecedenceConstraintInfo(
+                    PackageName=PackageName,
+                    PackagePath=PackagePath,
+                    PrecedenceConstraintFrom=precedence_constraint_from,
+                    PrecedenceConstraintTo=precedence_constraint_to,
+                    PrecedenceConstraintValue=precedence_constraint_value,
+                    PrecedenceConstraintExpression=precedence_constraint_expression,
+                    PrecedenceConstraintEvalOP=precedence_constraint_eval_op,
+                    PrecedenceConstraintLogicalAnd=precedence_constraint_logical_and,
+                    ContainerName=sequence.Name
+                ))
+
+        save_precedence_constraint_metadata(metadata, PackageDetailsFilePath)
+        return metadata.PrecedenceConstraintDetails
+
+
+    def extract_precedence_constraints_for_foreach(for_each):
+        metadata = PackageAnalysisResult()
+        metadata.PrecedenceConstraintDetails = []
+
+        if for_each.PrecedenceConstraints.Count == 0:
+            for executable in for_each.Executables:
+                if isinstance(executable, Sequence):
+                    extract_precedence_constraints_for_sequence(executable)
+                elif isinstance(executable, ForEachLoop):
+                    extract_precedence_constraints_for_foreach(executable)
+                elif isinstance(executable, ForLoop):
+                    extract_precedence_constraints_for_forloop(executable)
+        else:
+            for precedence_constraint in for_each.PrecedenceConstraints:
+                precedence_constraint_from = ""
+                precedence_constraint_to = ""
+                precedence_constraint_value = str(precedence_constraint.Value)
+                precedence_constraint_expression = str(precedence_constraint.Expression)
+                precedence_constraint_eval_op = str(precedence_constraint.EvalOp)
+                precedence_constraint_logical_and = str(precedence_constraint.LogicalAnd)
+
+                # FROM
+                if isinstance(precedence_constraint.PrecedenceExecutable, TaskHost):
+                    precedence_constraint_from = precedence_constraint.PrecedenceExecutable.Name
+                elif isinstance(precedence_constraint.PrecedenceExecutable, Sequence):
+                    precedence_constraint_from = precedence_constraint.PrecedenceExecutable.Name
+                    extract_precedence_constraints_for_sequence(precedence_constraint.PrecedenceExecutable)
+                elif isinstance(precedence_constraint.PrecedenceExecutable, ForEachLoop):
+                    precedence_constraint_from = precedence_constraint.PrecedenceExecutable.Name
+                    extract_precedence_constraints_for_foreach(precedence_constraint.PrecedenceExecutable)
+                elif isinstance(precedence_constraint.PrecedenceExecutable, ForLoop):
+                    precedence_constraint_from = precedence_constraint.PrecedenceExecutable.Name
+                    extract_precedence_constraints_for_forloop(precedence_constraint.PrecedenceExecutable)
+
+                # TO
+                if isinstance(precedence_constraint.ConstrainedExecutable, TaskHost):
+                    precedence_constraint_to = precedence_constraint.ConstrainedExecutable.Name
+                elif isinstance(precedence_constraint.ConstrainedExecutable, Sequence):
+                    precedence_constraint_to = precedence_constraint.ConstrainedExecutable.Name
+                    extract_precedence_constraints_for_sequence(precedence_constraint.ConstrainedExecutable)
+                elif isinstance(precedence_constraint.ConstrainedExecutable, ForEachLoop):
+                    precedence_constraint_to = precedence_constraint.ConstrainedExecutable.Name
+                    extract_precedence_constraints_for_foreach(precedence_constraint.ConstrainedExecutable)
+                elif isinstance(precedence_constraint.ConstrainedExecutable, ForLoop):
+                    precedence_constraint_to = precedence_constraint.ConstrainedExecutable.Name
+                    extract_precedence_constraints_for_forloop(precedence_constraint.ConstrainedExecutable)
+
+                # Append metadata
+                metadata.PrecedenceConstraintDetails.append(PrecedenceConstraintInfo(
+                    PackageName=PackageName,
+                    PackagePath=PackagePath,
+                    PrecedenceConstraintFrom=precedence_constraint_from,
+                    PrecedenceConstraintTo=precedence_constraint_to,
+                    PrecedenceConstraintValue=precedence_constraint_value,
+                    PrecedenceConstraintExpression=precedence_constraint_expression,
+                    PrecedenceConstraintEvalOP=precedence_constraint_eval_op,
+                    PrecedenceConstraintLogicalAnd=precedence_constraint_logical_and,
+                    ContainerName=for_each.Name
+                ))
+
+        save_precedence_constraint_metadata(metadata, PackageDetailsFilePath)
+        return metadata.PrecedenceConstraintDetails
+
+
+    def extract_precedence_constraints_for_forloop(for_loop):
+        metadata = PackageAnalysisResult()
+        metadata.PrecedenceConstraintDetails = []
+
+        if for_loop.PrecedenceConstraints.Count == 0:
+            for executable in for_loop.Executables:
+                if isinstance(executable, Sequence):
+                    extract_precedence_constraints_for_sequence(executable)
+                elif isinstance(executable, ForEachLoop):
+                    extract_precedence_constraints_for_foreach(executable)
+                elif isinstance(executable, ForLoop):
+                    extract_precedence_constraints_for_forloop(executable)
+        else:
+            for precedence_constraint in for_loop.PrecedenceConstraints:
+                precedence_constraint_from = ""
+                precedence_constraint_to = ""
+                precedence_constraint_value = str(precedence_constraint.Value)
+                precedence_constraint_expression = str(precedence_constraint.Expression)
+                precedence_constraint_eval_op = str(precedence_constraint.EvalOp)
+                precedence_constraint_logical_and = str(precedence_constraint.LogicalAnd)
+
+                # Extract "from" executable name
+                if isinstance(precedence_constraint.PrecedenceExecutable, TaskHost):
+                    precedence_constraint_from = precedence_constraint.PrecedenceExecutable.Name
+                elif isinstance(precedence_constraint.PrecedenceExecutable, Sequence):
+                    precedence_constraint_from = precedence_constraint.PrecedenceExecutable.Name
+                    extract_precedence_constraints_for_sequence(precedence_constraint.PrecedenceExecutable)
+                elif isinstance(precedence_constraint.PrecedenceExecutable, ForEachLoop):
+                    precedence_constraint_from = precedence_constraint.PrecedenceExecutable.Name
+                    extract_precedence_constraints_for_foreach(precedence_constraint.PrecedenceExecutable)
+                elif isinstance(precedence_constraint.PrecedenceExecutable, ForLoop):
+                    precedence_constraint_from = precedence_constraint.PrecedenceExecutable.Name
+                    extract_precedence_constraints_for_forloop(precedence_constraint.PrecedenceExecutable)
+
+                # Extract "to" executable name
+                if isinstance(precedence_constraint.ConstrainedExecutable, TaskHost):
+                    precedence_constraint_to = precedence_constraint.ConstrainedExecutable.Name
+                elif isinstance(precedence_constraint.ConstrainedExecutable, Sequence):
+                    precedence_constraint_to = precedence_constraint.ConstrainedExecutable.Name
+                    extract_precedence_constraints_for_sequence(precedence_constraint.ConstrainedExecutable)
+                elif isinstance(precedence_constraint.ConstrainedExecutable, ForEachLoop):
+                    precedence_constraint_to = precedence_constraint.ConstrainedExecutable.Name
+                    extract_precedence_constraints_for_foreach(precedence_constraint.ConstrainedExecutable)
+                elif isinstance(precedence_constraint.ConstrainedExecutable, ForLoop):
+                    precedence_constraint_to = precedence_constraint.ConstrainedExecutable.Name
+                    extract_precedence_constraints_for_forloop(precedence_constraint.ConstrainedExecutable)
+
+                metadata.PrecedenceConstraintDetails.append(PrecedenceConstraintInfo(
+                    PackageName=PackageName,
+                    PackagePath=PackagePath,
+                    PrecedenceConstraintFrom=precedence_constraint_from,
+                    PrecedenceConstraintTo=precedence_constraint_to,
+                    PrecedenceConstraintValue=precedence_constraint_value,
+                    PrecedenceConstraintExpression=precedence_constraint_expression,
+                    PrecedenceConstraintEvalOP=precedence_constraint_eval_op,
+                    PrecedenceConstraintLogicalAnd=precedence_constraint_logical_and,
+                    ContainerName=for_loop.Name
+                ))
+
+        save_precedence_constraint_metadata(metadata, PackageDetailsFilePath)
+        return metadata.PrecedenceConstraintDetails
+
+                        
     def extract_event_task_details(task_host, event_handler_name, event_handler_type, event_type,
                                 container_name, container_type, container_expression, container_enum_details):
         extract_task_details(
