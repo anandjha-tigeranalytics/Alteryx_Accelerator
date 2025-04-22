@@ -363,6 +363,51 @@ class SSISPackageAnalyzer:
             })
         self.save_project_parameter_metadata(metadata, self.PackageDetailsFilePath
 
+
+    def extract_event_for_loop_task_details(forloop, event_handler_name, event_handler_type, event_name):
+        container_name = forloop.Name
+        container_type = "ForLoop"
+        container_expression = get_for_loop_expressions(forloop)
+        container_enum = get_for_loop_enumerator(forloop)
+
+        for event_executable in forloop.Executables:
+            if isinstance(event_executable, TaskHost):
+                extract_event_task_details(
+                    event_executable,
+                    event_handler_name,
+                    event_handler_type,
+                    event_name,
+                    container_name,
+                    container_type,
+                    container_expression,
+                    container_enum
+                )
+
+            elif isinstance(event_executable, Sequence):
+                extract_event_sequence_task_details(
+                    event_executable,
+                    event_handler_name,
+                    event_handler_type,
+                    event_name
+                )
+
+            elif isinstance(event_executable, ForEachLoop):
+                extract_event_foreach_task_details(
+                    event_executable,
+                    event_handler_name,
+                    event_handler_type,
+                    event_name
+                )
+
+            elif isinstance(event_executable, ForLoop):
+                extract_event_for_loop_task_details(
+                    event_executable,
+                    event_handler_name,
+                    event_handler_type,
+                    event_name
+                )
+
+                                  
     def extract_variables_for_task(task_host):
         variables_used = []
 
