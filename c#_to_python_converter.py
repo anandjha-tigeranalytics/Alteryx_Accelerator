@@ -1,4 +1,5 @@
 import os
+import re
 import time
 import openpyxl
 import pyodbc
@@ -362,7 +363,90 @@ class SSISPackageAnalyzer:
             })
         self.save_project_parameter_metadata(metadata, self.PackageDetailsFilePath
 
-    
+    def extract_variables_for_task(task_host):
+        variables_used = []
+
+        task = task_host.InnerObject
+        task_type_name = type(task).__name__
+
+        if task_type_name == "ExecuteSQLTask":
+            sql_statement = getattr(task, "SqlStatementSource", "")
+            connection_string = getattr(task, "Connection", "")
+
+            if sql_statement:
+                expression_variables = extract_variables_from_expression(sql_statement)
+                variables_used.extend(expression_variables)
+            elif connection_string:
+                connection_variables = extract_variables_from_expression(connection_string)
+                variables_used.extend(connection_variables)
+
+        elif task_type_name == "FileSystemTask":
+            is_source_path_variable = getattr(task, "IsSourcePathVariable", False)
+            is_destination_path_variable = getattr(task, "IsDestinationPathVariable", False)
+
+            if is_source_path_variable:
+                source_path = getattr(task, "Source", "")
+                variables_used.append(f"Source Path: {source_path}")
+            if is_destination_path_variable:
+                destination_path = getattr(task, "Destination", "")
+                variables_used.append(f"Destination Path: {destination_path}")
+
+        elif task_type_name == "ScriptTask":
+            read_only_variables = getattr(task, "ReadOnlyVariables", "").split(',')
+            read_write_variables = getattr(task, "ReadWriteVariables", "").split(',')
+
+            variables_used.extend([var.strip() for var in read_only_variables if var.strip()])
+            variables_used.extend([var.strip() for var in read_write_variables if var.strip()])
+
+        return ", ".join(variables_used)
+
+    def extract_variables_from_expression(expression: str) -> list[str]:
+        """
+        Extracts variable names from an expression string formatted like @[User::VariableName]
+        """
+        variables = []
+        try:
+            pattern = re.compile(r'@\[(.*?)\]')
+            matches = pattern.findall(expression)
+            variables = matches
+        except Exception as e:
+            print(f"Error extracting variables: {e}")
+
+        return variables
+                                             
+    def extract_parameters_for_task(self, task_host):
+        parameters_used = []
+
+        if isinstance(task_host.InnerObject, ExecuteSQLTask):
+            sql_task = task_host.InnerObject
+
+            try:
+                parameter_bindings_prop = sql_task.GetType().GetProperty("ParameterBindings", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)
+                if parameter_bindings_prop is not None:
+                    parameter_bindings = parameter_bindings_prop.GetValue(sql_task)
+
+                    for binding in parameter_bindings:
+                        name_prop = binding.GetType().GetProperty("ParameterName")
+                        direction_prop = binding.GetType().GetProperty("ParameterDirection")
+                        data_type_prop = binding.GetType().GetProperty("DataType")
+                        value_prop = binding.GetType().GetProperty("Value")
+                        dts_variable_prop = binding.GetType().GetProperty("DtsVariableName")
+
+                        parameter_name = name_prop.GetValue(binding) if name_prop else ""
+                        parameter_type = direction_prop.GetValue(binding) if direction_prop else ""
+                        data_type = data_type_prop.GetValue(binding) if data_type_prop else ""
+                        value = value_prop.GetValue(binding) if value_prop else ""
+                        dts_variable_name = dts_variable_prop.GetValue(binding) if dts_variable_prop else ""
+
+                        param_str = f"Name: {parameter_name}, Type: {parameter_type}, DataType: {data_type}, Value: {value}, DtsVariableName: {dts_variable_name}"
+                        parameters_used.append(param_str)
+
+            except Exception as ex:
+                print(f"Error while extracting parameters: {str(ex)}")
+
+        return " | ".join(parameters_used)
+
+
     def extract_data_flow_task(self, task_host, event_handle):
         metadata = PackageAnalysisResult()
         metadata.DataFlowTaskDetails = []
