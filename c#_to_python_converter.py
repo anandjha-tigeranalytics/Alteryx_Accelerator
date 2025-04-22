@@ -226,17 +226,7 @@ class SSISPackageAnalyzer:
                 print("Truncated all metadata tables.")
             except Exception as e:
                 self.log_error("SQL Truncate", e)
-
-    def analyze_single_package(self, package_path):
-        tree = ET.parse(package_path)
-        root = tree.getroot()
-        namespace = {'DTS': 'www.microsoft.com/SqlServer/Dts'}
-
-        package_name = os.path.basename(package_path)
-        package_folder = os.path.dirname(package_path)
-
-        self.extract_variables(root, package_name, package_folder, namespace)
-
+ 
     def extract_variables(self, root, package_name, package_folder, ns):
         for variable in root.findall(".//DTS:Variable", ns):
             name = variable.get('{www.microsoft.com/SqlServer/Dts}ObjectName')
@@ -363,6 +353,79 @@ class SSISPackageAnalyzer:
             })
         self.save_project_parameter_metadata(metadata, self.PackageDetailsFilePath
 
+
+    def analyze_single_package(package_path):
+        app = Application()  # Assuming a wrapper for SSIS Application
+        package = app.load_package(package_path, None)  # Placeholder for loading package
+
+        component_name_check = []
+
+        try:
+            tree = ET.parse(package_path)
+            root = tree.getroot()
+            traverse_xml(root)
+        except Exception as ex:
+            print(f"Error: {ex}")
+
+        package_name = os.path.basename(package_path)
+        package_dir = os.path.dirname(package_path)
+
+        metadata = {
+            "PackageName": package_name,
+            "CreatedDate": package.creation_date,
+            "CreatedBy": package.creator_name,
+            "Tasks": count_package_tasks(package),
+            "Connections": count_package_connections(package),
+            "PackagePath": package_dir,
+            "Containers": count_package_containers(package),
+            "DTSXXML": ET.tostring(root, encoding="unicode"),
+            "Seqtasks": [],
+            "Foreachtasks": [],
+            "Forlooptasks": [],
+            "Variables": get_package_variables(package),
+            "DataFlowTaskDetails": [],
+        }
+
+        for executable in package.executables:
+            if isinstance(executable, ForEachLoop):
+                metadata["Foreachtasks"].extend(
+                    process_foreach_loop_container_details(executable, [], package)
+                )
+
+            elif isinstance(executable, Sequence):
+                metadata["Seqtasks"].extend(
+                    process_sequence_container_details(executable, [], package)
+                )
+
+            elif isinstance(executable, ForLoop):
+                metadata["Forlooptasks"].extend(
+                    process_for_loop_container_details(executable, [], package)
+                )
+
+            elif isinstance(executable, TaskHost):
+                if isinstance(executable.inner_object, MainPipe):
+                    extract_data_flow_task(executable, "0")
+
+        metadata["SequenceContainerTaskCount"] = count_sequence_container_tasks(package)
+        metadata["ForeachContainerTaskCount"] = count_foreache_container_tasks(package)
+        metadata["ForLoopContainerTaskCount"] = count_forloop_container_tasks(package)
+        metadata["ExecutionTime"] = measure_package_performance(package)
+
+        save_package_metadata(
+            metadata,
+            package_analysis_file_path,
+            package_details_file_path
+        )
+
+        extract_precedence_constraints_for_task(package)
+        extract_event_handlers_for_package(package)
+
+                     
+    def traverse_xml(node: ET.Element):
+        if node is not None:
+            for child in node:
+                traverse_xml(child)
+                                
     def get_package_variables(package: Package) -> list:
         variables = []
 
