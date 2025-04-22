@@ -2863,47 +2863,47 @@ class Program:
                     file_path = os.path.join(directory_path, file_name)
                     if os.path.isfile(file_path):
                         os.remove(file_path)
-                        # print(f"Deleted: {file_path}")
-            # print("All files have been deleted.")
             else:
                 print("Directory does not exist.")
         except Exception as ex:
             print(f"An error occurred: {ex}")
 
-def main():
-    connection_string = ""
-    output_folder = ""
+    @staticmethod
+    def main():
+        connection_string = ""
+        output_folder = ""
 
-    package_folder = input("Enter the Package Folder path:\n")
-    data_save_type = input("Enter the Data Save Type (SQL or EXCEL):\n").strip().upper()
+        package_folder = input("Enter the Package Folder path:\n")
+        data_save_type = input("Enter the Data Save Type (SQL or EXCEL):\n").strip().upper()
 
-    if data_save_type == "SQL":
-        connection_string = input("Enter the Connection String:\n")
-    elif data_save_type == "EXCEL":
-        output_folder = input("Enter the Output Folder path:\n")
-    else:
-        print("Wrong Input")
-        time.sleep(5)
-        return
+        if data_save_type == "SQL":
+            connection_string = input("Enter the Connection String:\n")
+        elif data_save_type == "EXCEL":
+            output_folder = input("Enter the Output Folder path:\n")
+        else:
+            print("Wrong Input")
+            time.sleep(5)
+            return
 
-    package_analysis_file_path = os.path.join(output_folder, "PackageAnalysisResult.xlsx")
-    dataflow_file_path = output_folder
-    package_details_file_path = os.path.join(output_folder, "PackageDetails.xlsx")
+        package_analysis_file_path = os.path.join(output_folder, "PackageAnalysisResult.xlsx")
+        dataflow_file_path = output_folder
+        package_details_file_path = os.path.join(output_folder, "PackageDetails.xlsx")
 
-    if data_save_type.upper() == "EXCEL":
-        Program.delete_all_files_in_directory(dataflow_file_path)
+        if data_save_type == "EXCEL":
+            Program.delete_all_files_in_directory(dataflow_file_path)
 
-    analyzer = SSISPackageAnalyzer(
-        package_folder,
-        connection_string,
-        package_analysis_file_path,
-        dataflow_file_path,
-        package_details_file_path,
-        data_save_type
-    )
-    analyzer.analyze_all_packages()
-    print("Running...")
+        analyzer = SSISPackageAnalyzer(
+            package_folder,
+            connection_string,
+            package_analysis_file_path,
+            dataflow_file_path,
+            package_details_file_path,
+            data_save_type
+        )
+        analyzer.analyze_all_packages()
+
+        print("Running...")
 
 
 if __name__ == "__main__":
-    main()
+    Program.main()
