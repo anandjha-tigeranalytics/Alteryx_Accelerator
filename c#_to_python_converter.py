@@ -364,6 +364,104 @@ class SSISPackageAnalyzer:
         self.save_project_parameter_metadata(metadata, self.PackageDetailsFilePath
 
 
+    
+
+
+
+                                             
+    def extract_event_task_details(task_host, event_handler_name, event_handler_type, event_type,
+                                container_name, container_type, container_expression, container_enum_details):
+        extract_task_details(
+            task_host,
+            event_handler_name,
+            event_handler_type,
+            event_type,
+            "1",  # Event indicator
+            container_name,
+            container_type,
+            container_expression,
+            container_enum_details
+        )
+
+    def extract_event_sequence_task_details(sequence, event_handler_name, event_handler_type, event_name):
+        container_name = sequence.Name
+        container_type = "Sequence"
+
+        for event_executable in sequence.Executables:
+            if isinstance(event_executable, TaskHost):
+                extract_event_task_details(
+                    event_executable,
+                    event_handler_name,
+                    event_handler_type,
+                    event_name,
+                    container_name,
+                    container_type,
+                    "",
+                    ""
+                )
+            elif isinstance(event_executable, Sequence):
+                extract_event_sequence_task_details(
+                    event_executable,
+                    event_handler_name,
+                    event_handler_type,
+                    event_name
+                )
+            elif isinstance(event_executable, ForEachLoop):
+                extract_event_foreach_task_details(
+                    event_executable,
+                    event_handler_name,
+                    event_handler_type,
+                    event_name
+                )
+            elif isinstance(event_executable, ForLoop):
+                extract_event_for_loop_task_details(
+                    event_executable,
+                    event_handler_name,
+                    event_handler_type,
+                    event_name
+                )
+
+    def extract_event_foreach_task_details(foreach_loop, event_handler_name, event_handler_type, event_name):
+        container_name = foreach_loop.Name
+        container_type = "ForEachLoop"
+        container_expression = get_for_each_loop_expressions(foreach_loop)
+        container_enum = get_for_each_loop_enumerator(foreach_loop)
+
+        for event_executable in foreach_loop.Executables:
+            if isinstance(event_executable, TaskHost):
+                extract_event_task_details(
+                    event_executable,
+                    event_handler_name,
+                    event_handler_type,
+                    event_name,
+                    container_name,
+                    container_type,
+                    container_expression,
+                    container_enum
+                )
+            elif isinstance(event_executable, Sequence):
+                extract_event_sequence_task_details(
+                    event_executable,
+                    event_handler_name,
+                    event_handler_type,
+                    event_name
+                )
+            elif isinstance(event_executable, ForEachLoop):
+                extract_event_foreach_task_details(
+                    event_executable,
+                    event_handler_name,
+                    event_handler_type,
+                    event_name
+                )
+            elif isinstance(event_executable, ForLoop):
+                extract_event_for_loop_task_details(
+                    event_executable,
+                    event_handler_name,
+                    event_handler_type,
+                    event_name
+            )
+
+                           
     def extract_event_for_loop_task_details(forloop, event_handler_name, event_handler_type, event_name):
         container_name = forloop.Name
         container_type = "ForLoop"
