@@ -363,8 +363,48 @@ class SSISPackageAnalyzer:
             })
         self.save_project_parameter_metadata(metadata, self.PackageDetailsFilePath
 
-    
+    def process_container_for_loop(container: ForLoop, tasks_in_for_each: list, package):
+        # Check if the container is a ForLoop (redundant in Python, as it's already typed)
+        if isinstance(container, ForLoop):
+            pass  # Placeholder for any logic if needed for the base ForLoop
 
+        # Iterate over nested executables
+        for nested_executable in container.Executables:
+            if isinstance(nested_executable, ForEachLoop):
+                tasks_in_loop = process_foreach_loop_container_details(nested_executable, [], package)
+                tasks_in_for_each.extend(tasks_in_loop)
+
+            elif isinstance(nested_executable, Sequence):
+                tasks_in_loop = process_sequence_container_details(nested_executable, [], package)
+                tasks_in_for_each.extend(tasks_in_loop)
+
+            elif isinstance(nested_executable, ForLoop):
+                tasks_in_loop = process_for_loop_container_details(nested_executable, [], package)
+                tasks_in_for_each.extend(tasks_in_loop)
+
+                                                                            
+    def count_package_tasks(package):
+        tasks = []
+
+        for executable in package.Executables:
+            if isinstance(executable, TaskHost):
+                extract_task_details(
+                    executable,
+                    event_handler_name="",
+                    event_handler_type="",
+                    event_type="",
+                    event_indicator="0",
+                    container_name="",
+                    container_type="",
+                    container_expression="",
+                    container_enum_details=""
+                )
+
+                tasks.append(TaskInfo(
+                TaskName=executable.Name
+                ))
+
+        return tasks
                                              
     def extract_event_handlers_for_package(package):
         if package.EventHandlers.Count > 0:
