@@ -362,7 +362,122 @@ class SSISPackageAnalyzer:
             })
         self.save_project_parameter_metadata(metadata, self.PackageDetailsFilePath
 
+    
+    def extract_data_flow_task(self, task_host, event_handle):
+        metadata = PackageAnalysisResult()
+        metadata.DataFlowTaskDetails = []
 
+        if isinstance(task_host.InnerObject, MainPipe):
+            data_flow_task = task_host.InnerObject
+            for component in data_flow_task.ComponentMetaDataCollection:
+                cm_check = f"{task_host.Name} : {self.PackageName} : {self.PackagePath} : {component.Name}"
+                if cm_check in self.ComponentNameCHeck:
+                    self.ComponentCount += 0
+                else:
+                    self.ComponentNameCHeck.add(cm_check)
+                    self.ComponentCount += 1
+
+                for input_ in component.InputCollection:
+                    component_property_details = ""
+                    for input_col in input_.InputColumnCollection:
+                        column_property_details = ""
+                        for prop in input_col.CustomPropertyCollection:
+                            column_property_details += f"Property name: {prop.Name}, value: {prop.Value} , Exp: {prop.ExpressionType} "
+
+                        metadata.DataFlowTaskDetails.append(DataFlowTaskInfo(
+                            ColumnName=input_col.Name,
+                            DataType=str(input_col.DataType),
+                            componentName=component.Name,
+                            TaskName=task_host.Name,
+                            PackageName=self.PackageName,
+                            PackagePath=self.PackagePath,
+                            ColumnType=str(input_col.ObjectType),
+                            isEventHandler=event_handle,
+                            ColumnPropertyDetails=column_property_details
+                        ))
+
+                    for prop in input_.CustomPropertyCollection:
+                        component_property_details += f"Property name: {prop.Name}, value: {prop.Value} , Exp: {prop.ExpressionType}"
+
+                    if component_property_details:
+                        metadata.DataFlowTaskDetails.append(DataFlowTaskInfo(
+                            componentName=component.Name,
+                            TaskName=task_host.Name,
+                            PackageName=self.PackageName,
+                            PackagePath=self.PackagePath,
+                            componentPropertyDetails=f"Companaed Type: {input_.Name}, {component_property_details}",
+                            isEventHandler=event_handle
+                        ))
+
+                for output in component.OutputCollection:
+                    component_property_details = ""
+                    for output_col in output.OutputColumnCollection:
+                        if any(err in output_col.Name for err in ["Error", "ErrorCode", "ErrorColumn"]):
+                            continue
+
+                        column_property_details = ""
+                        for prop in output_col.CustomPropertyCollection:
+                            column_property_details += f"Property name: {prop.Name}, value: {prop.Value} , Exp: {prop.ExpressionType} "
+
+                        metadata.DataFlowTaskDetails.append(DataFlowTaskInfo(
+                            ColumnName=output_col.Name,
+                            DataType=str(output_col.DataType),
+                            componentName=component.Name,
+                            TaskName=task_host.Name,
+                            PackageName=self.PackageName,
+                            PackagePath=self.PackagePath,
+                            ColumnType=str(output_col.ObjectType),
+                            isEventHandler=event_handle,
+                            ColumnPropertyDetails=column_property_details
+                        ))
+
+                    for prop in output.CustomPropertyCollection:
+                        component_property_details += f"Property name: {prop.Name}, value: {prop.Value} , Exp: {prop.ExpressionType}"
+
+                    if component_property_details:
+                        metadata.DataFlowTaskDetails.append(DataFlowTaskInfo(
+                            componentName=component.Name,
+                            TaskName=task_host.Name,
+                            PackageName=self.PackageName,
+                            PackagePath=self.PackagePath,
+                            componentPropertyDetails=f"Companaed Type: {output.Name}, {component_property_details}",
+                            isEventHandler=event_handle
+                        ))
+
+            for component in data_flow_task.ComponentMetaDataCollection:
+                if "Data Conversion" in component.Name:
+                    for input_col in component.InputCollection[0].InputColumnCollection:
+                        metadata.DataFlowTaskDetails.append(DataFlowTaskInfo(
+                            ColumnName=input_col.Name,
+                            DataType=str(input_col.DataType),
+                            componentName=component.Name,
+                            TaskName=task_host.Name,
+                            DataConversion=str(component.OutputCollection[0].OutputColumnCollection[0].DataType),
+                            PackageName=self.PackageName,
+                            PackagePath=self.PackagePath,
+                            ColumnType="Data Conversion :" + str(input_col.ObjectType),
+                            isEventHandler=event_handle
+                        ))
+
+                    for output_col in component.OutputCollection[0].OutputColumnCollection:
+                        if any(err in output_col.Name for err in ["Error", "ErrorCode", "ErrorColumn"]):
+                            continue
+                        metadata.DataFlowTaskDetails.append(DataFlowTaskInfo(
+                            ColumnName=output_col.Name,
+                            DataType=str(output_col.DataType),
+                            componentName=component.Name,
+                            TaskName=task_host.Name,
+                            DataConversion=str(component.OutputCollection[0].OutputColumnCollection[0].DataType),
+                            PackageName=self.PackageName,
+                            PackagePath=self.PackagePath,
+                            ColumnType="Data Conversion :" + str(output_col.ObjectType),
+                            isEventHandler=event_handle
+                        ))
+
+        self.SaveDataFlowMetadata(metadata, self.DataFlowlFilePath)
+        return metadata.DataFlowTaskDetails
+
+                                 
     def match_columns(input_column, output_column):
         """
         Checks if input and output SSIS columns match by name or data type.
