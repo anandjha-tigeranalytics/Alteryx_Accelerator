@@ -158,8 +158,6 @@ class SSISPackageAnalyzer:
         self.ComponentNameCheck = []
         self.variables_metadata = []
 
-   
-
     def truncate_table(self):
         if self.DataSaveType.upper() == "SQL":
             try:
@@ -184,56 +182,6 @@ class SSISPackageAnalyzer:
             except Exception as e:
                 self.log_error("SQL Truncate", e)
  
-    def extract_variables(self, root, package_name, package_folder, ns):
-        for variable in root.findall(".//DTS:Variable", ns):
-            name = variable.get('{www.microsoft.com/SqlServer/Dts}ObjectName')
-            data_type = variable.get('{www.microsoft.com/SqlServer/Dts}DataType')
-            namespace_scope = variable.get('{www.microsoft.com/SqlServer/Dts}Namespace')
-
-            value_node = variable.find("DTS:Value", ns)
-            value = value_node.text if value_node is not None else ""
-
-            self.variables_metadata.append({
-                'VariableName': name,
-                'DataType': data_type,
-                'Namespace': namespace_scope,
-                'Value': value,
-                'PackageName': package_name,
-                'PackagePath': package_folder
-            })
-
-    def save_variable_metadata(self, file_path):
-        if self.DataSaveType.upper() == "EXCEL":
-            df = pd.DataFrame(self.variables_metadata)
-            excel_path = os.path.join(file_path if os.path.isdir(file_path) else os.path.dirname(file_path), "Variables.xlsx")
-            df.to_excel(excel_path, index=False)
-            print(f"Saved variable metadata to {excel_path}")
-        elif self.DataSaveType.upper() == "SQL":
-            conn = pyodbc.connect(self._connection_string)
-            cursor = conn.cursor()
-
-            cursor.execute("""
-                IF OBJECT_ID('dbo.SSISVariables', 'U') IS NOT NULL DROP TABLE dbo.SSISVariables;
-                CREATE TABLE dbo.SSISVariables (
-                    VariableName NVARCHAR(255),
-                    DataType NVARCHAR(50),
-                    Namespace NVARCHAR(255),
-                    Value NVARCHAR(MAX),
-                    PackageName NVARCHAR(255),
-                    PackagePath NVARCHAR(500)
-                )
-            """)
-            for row in self.variables_metadata:
-                cursor.execute("""
-                    INSERT INTO dbo.SSISVariables (VariableName, DataType, Namespace, Value, PackageName, PackagePath)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                """, row['VariableName'], row['DataType'], row['Namespace'], row['Value'], row['PackageName'], row['PackagePath'])
-            conn.commit()
-            cursor.close()
-            conn.close()
-            print("Saved variable metadata to SQL Server")
-
-
     def analyze_all_packages(package_folder):
         truncate_table()  # Your function to truncate the target table
 
@@ -327,7 +275,6 @@ class SSISPackageAnalyzer:
 
         save_project_parameter_metadata(metadata, package_details_file_path)
 
-
     def analyze_single_connection_manager(connection_manager_path):
         tree = ET.parse(connection_manager_path)
         root = tree.getroot()
@@ -381,7 +328,6 @@ class SSISPackageAnalyzer:
         })
 
         save_connections_metadata(metadata, package_details_file_path)
-
 
     def analyze_single_package(package_path):
         app = Application()  # Assuming a wrapper for SSIS Application
@@ -448,8 +394,7 @@ class SSISPackageAnalyzer:
 
         extract_precedence_constraints_for_task(package)
         extract_event_handlers_for_package(package)
-
-                     
+    
     def traverse_xml(node: ET.Element):
         if node is not None:
             for child in node:
@@ -2913,14 +2858,17 @@ class Program:
     @staticmethod
     def delete_all_files_in_directory(directory_path):
         try:
-            if os.path.exists(directory_path):
+            if os.path.exists(directory_path) and os.path.isdir(directory_path):
                 for file_name in os.listdir(directory_path):
                     file_path = os.path.join(directory_path, file_name)
                     if os.path.isfile(file_path):
                         os.remove(file_path)
+                        # print(f"Deleted: {file_path}")
+            # print("All files have been deleted.")
+            else:
+                print("Directory does not exist.")
         except Exception as ex:
-            print(f"An error occurred: {str(ex)}")
-
+            print(f"An error occurred: {ex}")
 
 def main():
     connection_string = ""
