@@ -400,7 +400,7 @@ class SSISPackageAnalyzer:
             for child in node:
                 traverse_xml(child)
                                 
-    def get_package_variables(package: Package) -> list:
+    def get_package_variables(package) -> list:
         variables = []
 
         for variable in package.variables:
@@ -423,7 +423,7 @@ class SSISPackageAnalyzer:
 
         return variables
                              
-    def count_sequence_container_tasks(package: Package) -> list:
+    def count_sequence_container_tasks(package) -> list:
         tasks_in_sequence = []
 
         for executable in package.executables:
@@ -441,7 +441,7 @@ class SSISPackageAnalyzer:
         return tasks_in_sequence
 
                               
-    def count_foreach_container_tasks(package: Package) -> list:
+    def count_foreach_container_tasks(package) -> list:
         tasks_in_for_each = []
 
         for executable in package.executables:
@@ -459,7 +459,7 @@ class SSISPackageAnalyzer:
         return tasks_in_for_each
 
                                              
-    def count_forloop_container_tasks(package: Package) -> list:
+    def count_forloop_container_tasks(package) -> list:
         tasks_in_for_loop = []
 
         for executable in package.executables:
@@ -476,7 +476,7 @@ class SSISPackageAnalyzer:
         
         return tasks_in_for_loop
 
-    def process_container_foreach_loop(container: ForEachLoop, tasks_in_for_each: list, package):
+    def process_container_foreach_loop(container, tasks_in_for_each: list, package):
         # Check if the container is a ForEachLoop (redundant in Python, but included for structure)
         if isinstance(container, ForEachLoop):
             pass  # Placeholder for any logic specific to ForEachLoop
@@ -496,7 +496,7 @@ class SSISPackageAnalyzer:
                 tasks_in_for_each.extend(tasks_in_loop)
                 
                                
-    def process_container_sequence_loop(container: Sequence, tasks_in_for_each: list, package):
+    def process_container_sequence_loop(container, tasks_in_for_each: list, package):
         # Check if the container is a Sequence (redundant in Python but included for clarity)
         if isinstance(container, Sequence):
             pass  # Placeholder for any logic specific to Sequence containers
@@ -516,7 +516,7 @@ class SSISPackageAnalyzer:
                 tasks_in_for_each.extend(tasks_in_loop)
                 
 
-    def process_container_for_loop(container: ForLoop, tasks_in_for_each: list, package):
+    def process_container_for_loop(container, tasks_in_for_each: list, package):
         # Check if the container is a ForLoop (redundant in Python, as it's already typed)
         if isinstance(container, ForLoop):
             pass  # Placeholder for any logic if needed for the base ForLoop
