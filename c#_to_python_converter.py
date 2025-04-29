@@ -182,8 +182,8 @@ class SSISPackageAnalyzer:
             except Exception as e:
                 self.log_error("SQL Truncate", e)
  
-    def analyze_all_packages(package_folder):
-        truncate_table()  # Your function to truncate the target table
+    def analyze_all_packages(self, package_folder):
+        self.truncate_table()  # Now correctly using self
 
         for root, dirs, files in os.walk(package_folder):
             if "\\obj\\" in root.lower():
@@ -224,7 +224,7 @@ class SSISPackageAnalyzer:
             except Exception as ex:
                 print(f"Error accessing directory {root}: {ex}")
 
-        save_update_connection_name(package_details_file_path)
+        self.save_update_connection_name(self.PackageDetailsFilePath)
         print("Completed...")
 
     
@@ -2900,7 +2900,7 @@ class Program:
             package_details_file_path,
             data_save_type
         )
-        analyzer.analyze_all_packages()
+        analyzer.analyze_all_packages(package_folder)
 
         print("Running...")
 
