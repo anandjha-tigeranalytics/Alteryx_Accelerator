@@ -145,7 +145,7 @@ class PackageAnalysisResult:
 class TaskHost:
     def __init__(self, name="Task"):
         self.Name = name
-        self.inner_object = None
+        self.InnerObject = None
 
 class ForEachLoop:
     pass
@@ -381,14 +381,24 @@ class SSISPackageAnalyzer:
 
         def extract_tasks_from_xml(root, package):
             for executable in root.findall(".//{*}Executable"):
-                exec_type = executable.attrib.get("DTS:ExecutableType")
-                task_name = executable.attrib.get("DTS:Name") or executable.attrib.get("Name")
+                exec_type = executable.attrib.get("{www.microsoft.com/SqlServer/Dts}ExecutableType")
+                task_name = executable.attrib.get("{www.microsoft.com/SqlServer/Dts}ObjectName") or executable.attrib.get("Name")
 
                 if exec_type and task_name:
-                    task_host = TaskHost(
-                        Name=task_name,
-                        inner_object=None  # Optionally add exec_type here
-                    )
+                    task_host = TaskHost(task_name)
+
+                    # Instantiate correct object based on task type
+                    if exec_type == "Microsoft.ForEachLoopContainer":
+                        task_host.InnerObject = ForEachLoop()
+                    elif exec_type == "Microsoft.ForLoopContainer":
+                        task_host.InnerObject = ForLoop()
+                    elif exec_type == "STOCK:SEQUENCE":
+                        task_host.InnerObject = Sequence()
+                    elif exec_type == "Microsoft.Pipeline":
+                        task_host.InnerObject = MainPipe()
+                    else:
+                        task_host.InnerObject = exec_type  # fallback to string
+
                     package.executables.append(task_host)
 
         package = MockPackage(package_path)
@@ -399,6 +409,7 @@ class SSISPackageAnalyzer:
         
         # Traverse and parse for task details
         extract_tasks_from_xml(package.root, package)
+        #print(package.executables)
 
         try:
             # tree = ET.parse(package_path)
@@ -422,15 +433,15 @@ class SSISPackageAnalyzer:
         result.DTSXXML = ET.tostring(package.root, encoding="unicode")
         result.Variables = self.get_package_variables(package)
 
-        for executable in package.executables:
-            if isinstance(executable, ForEachLoop):
+        '''for executable in package.executables:
+            if isinstance(executable.InnerObject, ForEachLoop):
                 result.Foreachtasks.extend(self.process_foreach_loop_container_details(executable, [], package))
-            elif isinstance(executable, Sequence):
+            elif isinstance(executable.InnerObject, Sequence):
                 result.Seqtasks.extend(self.process_sequence_container_details(executable, [], package))
-            elif isinstance(executable, ForLoop):
+            elif isinstance(executable.InnerObject, ForLoop):
                 result.Forlooptasks.extend(self.process_for_loop_container_details(executable, [], package))
-            elif isinstance(executable, TaskHost) and isinstance(executable.inner_object, MainPipe):
-                self.extract_data_flow_task(executable, "0")
+            elif isinstance(executable, TaskHost) and isinstance(executable.InnerObject, MainPipe):
+                self.extract_data_flow_task(executable, "0")'''
 
         result.SequenceContainerTaskCount = self.count_sequence_container_tasks(package)
         result.ForeachContainerTaskCount = self.count_foreach_container_tasks(package)
@@ -639,6 +650,83 @@ class SSISPackageAnalyzer:
                     total_count += self.recursive_count(executable,req_creation_name)
 
         return total_count
+
+    def count_package_connections(self, package):
+        """
+        Extracts all the connection metadata from a given SSIS package and returns a list of ConnectionInfo objects.
+        """
+        connection_managers = []
+        namespace = {'DTS': 'www.microsoft.com/SqlServer/Dts'}
+        connection_data = []
+        
+        def recurse_connections(element):
+            for conn_mgrs in element.findall('DTS:ConnectionManagers', namespace):
+                for conn in conn_mgrs.findall('DTS:ConnectionManager', namespace):
+                    conn_name = conn.attrib.get('{www.microsoft.com/SqlServer/Dts}ObjectName')
+                    conn_type = conn.attrib.get('{www.microsoft.com/SqlServer/Dts}CreationName')
+                    conn_id = conn.attrib.get('{www.microsoft.com/SqlServer/Dts}DTSID')
+
+                    # Find connection string inside nested ObjectData/ConnectionManager
+                    conn_string = ""
+                    conn_exprs = {}
+
+                    object_data = conn.find('DTS:ObjectData', namespace)
+                    if object_data is not None:
+                        inner_conn = object_data.find('DTS:ConnectionManager', namespace)
+                        if inner_conn is not None:
+                            conn_string = inner_conn.attrib.get('{www.microsoft.com/SqlServer/Dts}ConnectionString', '')
+
+                            # You can extract expressions here if available in XML
+                            # Example placeholder: conn_exprs = extract_expressions(inner_conn)
+
+                    connection_data.append({
+                        "ConnectionName": conn_name,
+                        "ConnectionString": conn_string,
+                        "ConnectionExpressions": conn_exprs,
+                        "ConnectionType": conn_type,
+                        "ConnectionID": conn_id,
+                        "IsProjectConnection": "0"
+                    })
+
+            for child in element:
+                recurse_connections(child)
+        
+
+        recurse_connections(package.root)
+        return connection_data
+        #return connection_managers
+
+    def count_package_containers(self, package):
+        """
+        Counts all the top-level containers in the SSIS package and extracts their metadata.
+        """
+        containers = []
+        expression_details = ""
+
+        for executable in package.executables:
+            if isinstance(executable, DtsContainer) and not isinstance(executable, TaskHost):
+
+                if isinstance(executable, ForEachLoop):
+                    expression_details = self.get_foreach_loop_expressions(executable)
+                else:
+                    expression_details = ""
+
+                # Add base container info
+                containers.append(ContainerInfo(
+                    ContainerName=executable.Name,
+                    ContainerType=type(executable).__name__,
+                    ContainerExpression=expression_details
+                ))
+
+                # Process container-specific inner executables
+                if isinstance(executable, Sequence):
+                    self.process_sequence_container(executable, containers)
+                elif isinstance(executable, ForEachLoop):
+                    self.process_foreach_loop_container(executable, containers)
+                elif isinstance(executable, ForLoop):
+                    self.process_for_loop_container(executable, containers)
+        print(containers)
+        return containers
 
 
     def extract_event_handlers_for_package(self,package):
@@ -1536,70 +1624,7 @@ class SSISPackageAnalyzer:
             return ""
 
 
-    def count_package_connections(self, package):
-        """
-        Extracts all the connection metadata from a given SSIS package and returns a list of ConnectionInfo objects.
-        """
-        connections = []
-
-        for conn in package.connections:
-            connection_details = ""
-            expression_details = []
-
-            for prop in conn.Properties:
-                try:
-                    expression = conn.GetExpression(prop.Name)
-                    if expression:
-                        expression_details.append(f"{prop.Name}: {expression}")
-                except Exception as ex:
-                    print(f"Error accessing expression for property {prop.Name}: {str(ex)}")
-
-            if expression_details:
-                connection_details = "Expressions: " + ", ".join(expression_details)
-
-            connections.append(ConnectionInfo(
-                ConnectionName=conn.Name,
-                ConnectionString=conn.ConnectionString,
-                ConnectionExpressions=connection_details,
-                ConnectionType=conn.CreationName,
-                ConnectionID=conn.ID,
-                IsProjectConnection="0"
-            ))
-
-        return connections
-
-    def count_package_containers(self, package):
-        """
-        Counts all the top-level containers in the SSIS package and extracts their metadata.
-        """
-        containers = []
-        expression_details = ""
-
-        for executable in package.executables:
-            if isinstance(executable, DtsContainer) and not isinstance(executable, TaskHost):
-
-                if isinstance(executable, ForEachLoop):
-                    expression_details = self.get_foreach_loop_expressions(executable)
-                else:
-                    expression_details = ""
-
-                # Add base container info
-                containers.append(ContainerInfo(
-                    ContainerName=executable.Name,
-                    ContainerType=type(executable).__name__,
-                    ContainerExpression=expression_details
-                ))
-
-                # Process container-specific inner executables
-                if isinstance(executable, Sequence):
-                    self.process_sequence_container(executable, containers)
-                elif isinstance(executable, ForEachLoop):
-                    self.process_foreach_loop_container(executable, containers)
-                elif isinstance(executable, ForLoop):
-                    self.process_for_loop_container(executable, containers)
-        print(containers)
-        return containers
-
+    
     
     def get_foreach_loop_expressions(self, foreach_loop):
         """
@@ -2092,6 +2117,7 @@ class SSISPackageAnalyzer:
         return os.path.isfile(file_path)
 
     def save_package_metadata(self, result, analysis_file_path, details_file_path):
+        #print(result.Connections) -- used for testing purpose
         task_count = (
             result.Tasks +             
             len(result.Foreachtasks) +
@@ -2179,9 +2205,9 @@ class SSISPackageAnalyzer:
             for conn in result.Connections:
                 sheet_conn.append([
                     result.PackageName, result.PackagePath,
-                    conn.ConnectionName, conn.ConnectionType,
-                    conn.ConnectionExpressions, conn.ConnectionString,
-                    conn.ConnectionID, conn.IsProjectConnection
+                    str(conn["ConnectionName"]), str(conn["ConnectionType"]),
+                    str(conn["ConnectionExpressions"]), str(conn["ConnectionString"]),
+                    str(conn["ConnectionID"]), str(conn["IsProjectConnection"])
                 ])
 
             workbook_details.save(details_file_path)
