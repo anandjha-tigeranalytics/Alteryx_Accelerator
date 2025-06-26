@@ -2,9 +2,9 @@ import snowflake.connector
 # connect to snowflake
 
 conn = snowflake.connector.connect(
-    account = 'HDFEYMR-TIGERANALYTICS_PARTNER',
-    user = 'ANAND.JHA@TIGERANALYTICS.COM',
-    password = 'A6jhamintu@1990',
+    account = '',
+    user = '',
+    password = '',
     role = 'DWHBI_DEVELOPER',
     warehouse = 'DWHBI_DEVELOPER_WH',
     database = 'SNOWFLAKE_COE',
