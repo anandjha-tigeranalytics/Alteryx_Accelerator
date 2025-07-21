@@ -305,6 +305,7 @@ class SSISPackageAnalyzer:
                         continue
                     try:
                         self.processed_package_paths.add(conn_path)
+                        
                         self.analyze_single_connection_manager(conn_path)
                     except Exception as ex:
                         self.log_error(conn_path, ex)
@@ -494,59 +495,48 @@ class SSISPackageAnalyzer:
             main_pipe.ComponentMetaDataCollection.append(component)
         return main_pipe
 
-    def analyze_single_connection_manager(self,connection_manager_path):
-        tree = ET.parse(connection_manager_path)
-        root = tree.getroot()
+    def analyze_single_connection_manager(self, connection_manager_path):
+        try:
+            tree = ET.parse(connection_manager_path)
+            root = tree.getroot()
 
-        # Define the namespace mapping
-        ns = {'DTS': 'www.microsoft.com/SqlServer/Dts'}
+            ns = {'DTS': 'www.microsoft.com/SqlServer/Dts'}
 
-        connection_string_name = ""
-        connection_name = ""
-        connection_id = ""
-        connection_expression = ""
-        connection_type = ""
+            base_node = root  # DTS:ConnectionManager
+            object_data_node = root.find("DTS:ObjectData", ns)
+            inner_conn_node = object_data_node.find("DTS:ConnectionManager", ns) if object_data_node is not None else None
 
-        # Extract specific attributes using XPath
-        conn_string_node = root.find(".//DTS:ConnectionManager/DTS:ObjectData/DTS:ConnectionManager", ns)
-        connection_name_node = root.find(".//DTS:ConnectionManager", ns)
-        connection_type_node = root.find(".//DTS:ConnectionManager", ns)
-        connection_id_node = root.find(".//DTS:ConnectionManager", ns)
+            connection_name = base_node.attrib.get("{www.microsoft.com/SqlServer/Dts}ObjectName", "")
+            connection_type = base_node.attrib.get("{www.microsoft.com/SqlServer/Dts}CreationName", "")
+            connection_id = base_node.attrib.get("{www.microsoft.com/SqlServer/Dts}DTSID", "")
+            connection_string = inner_conn_node.attrib.get("{www.microsoft.com/SqlServer/Dts}ConnectionString", "") if inner_conn_node is not None else ""
 
-        if conn_string_node is not None:
-            connection_string_name = conn_string_node.attrib.get("{www.microsoft.com/SqlServer/Dts}ConnectionString", "")
+            # Collect expressions
+            connection_expression = ""
+            for expr_node in root.findall(".//DTS:PropertyExpression", ns):
+                name = expr_node.attrib.get("{www.microsoft.com/SqlServer/Dts}Name", "")
+                value = expr_node.text or ""
+                connection_expression += f"{name}: {value} "
 
-        if connection_name_node is not None:
-            connection_name = connection_name_node.attrib.get("{www.microsoft.com/SqlServer/Dts}ObjectName", "")
+            metadata = {
+                "Connections": [],
+                "PackagePath": os.path.dirname(connection_manager_path),
+                "PackageName": os.path.basename(connection_manager_path)
+            }
 
-        if connection_type_node is not None:
-            connection_type = connection_type_node.attrib.get("{www.microsoft.com/SqlServer/Dts}CreationName", "")
+            metadata["Connections"].append({
+                "ConnectionName": connection_name,
+                "ConnectionType": connection_type,
+                "ConnectionString": connection_string,
+                "ConnectionExpressions": connection_expression.strip(),
+                "ConnectionID": connection_id,
+                "IsProjectConnection": "1"
+            })
 
-        if connection_id_node is not None:
-            connection_id = connection_id_node.attrib.get("{www.microsoft.com/SqlServer/Dts}DTSID", "")
+            self.save_connections_metadata(metadata, self.PackageDetailsFilePath)
 
-        # Handle property expressions
-        for prop_expr_node in root.findall(".//DTS:PropertyExpression", ns):
-            name = prop_expr_node.attrib.get("{www.microsoft.com/SqlServer/Dts}Name", "Name not found.")
-            value = prop_expr_node.text or ""
-            connection_expression += f"{name} : {value} "
-
-        metadata = {
-            "Connections": [],
-            "PackagePath": os.path.dirname(connection_manager_path),
-            "PackageName": os.path.basename(connection_manager_path)
-        }
-
-        metadata["Connections"].append({
-            "ConnectionName": connection_name,
-            "ConnectionString": connection_string_name,
-            "ConnectionExpressions": connection_expression.strip(),
-            "ConnectionType": connection_type,
-            "ConnectionID": connection_id,
-            "IsProjectConnection": "1"
-        })
-
-        self.save_connections_metadata(metadata, self.PackageDetailsFilePath)
+        except Exception as e:
+            self.log_error(connection_manager_path, e)
 
 
     def analyze_single_package(self,package_path):
