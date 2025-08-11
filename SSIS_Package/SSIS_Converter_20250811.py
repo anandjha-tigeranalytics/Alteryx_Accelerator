@@ -350,15 +350,20 @@ class SSISPackageAnalyzer:
 
                         #  NEW: Extract Package Task Details from .dtsx
                         result = self.extract_package_task_details(package_path)
+                        self.save_package_task_metadata({"ExtractTaskDetails": result}, self.PackageDetailsFilePath)
+
+                        # Extract Container Details and merge with result
+                        container_results = self.extract_package_container_details(package_path)
+                        self.save_package_container_metadata(container_results, self.PackageDetailsFilePath)
+
 
                         # Extract Event Handler Task Details
                         event_details = self.extract_event_handler_task_details(package_path)
                         if event_details:
                             self.save_event_metadata(event_details, self.PackageDetailsFilePath)
 
-
                         #  Save to Excel or SQL using existing function
-                        self.save_package_task_metadata({"ExtractTaskDetails": result}, self.PackageDetailsFilePath)
+                        
 
                     except Exception as ex:
                         self.log_error(package_path, ex)
@@ -469,25 +474,75 @@ class SSISPackageAnalyzer:
         except Exception as e:
             print(f"Error parsing {dtsx_file_path}: {e}")
 
-    def extract_package_task_details(self,package_path):
+    def extract_task_connection_name(self,executable, root, ns):
+        """
+        Extract TaskConnectionName from the DTS:Executable node using the connection GUID.
+        """
+        task_connection_name = ""
+
+        # Step 1: Find the SQLTaskData node and extract the Connection ID
+        sql_node = executable.find(".//SQLTask:SqlTaskData", ns)
+        if sql_node is not None:
+            # Step 2: Extract Connection GUID from attribute with proper namespace
+            connection_guid = sql_node.attrib.get("{www.microsoft.com/sqlserver/dts/tasks/sqltask}Connection", "").strip()
+
+
+            if connection_guid:
+                # Step 3: Remove surrounding braces if present
+                connection_guid_clean = connection_guid.strip("{}")
+
+                # Step 4: Build XPath to find corresponding DTS:connection node
+                xpath_expr = f".//DTS:connection[@connectionManagerID='{{{connection_guid_clean}}}:external']"
+                connection_node = root.find(xpath_expr, namespaces=ns)
+
+                # Step 5: Extract from connectionManagerRefId
+                if connection_node is not None:
+                    ref_id = connection_node.attrib.get("connectionManagerRefId", "")
+                    if ref_id.startswith("Project.ConnectionManagers[") and ref_id.endswith("]"):
+                        task_connection_name = ref_id.split("[")[-1].rstrip("]")
+
+        return task_connection_name
+
+    
+    def extract_package_task_details(self, package_path):
         details = []
         try:
             tree = ET.parse(package_path)
             root = tree.getroot()
-            ns = {'DTS': 'www.microsoft.com/SqlServer/Dts', 'SQLTask': 'www.microsoft.com/sqlserver/dts/tasks/sqltask'}
+            ns = {
+                'DTS': 'www.microsoft.com/SqlServer/Dts',
+                'SQLTask': 'www.microsoft.com/sqlserver/dts/tasks/sqltask'
+            }
 
             package_name = os.path.basename(package_path)
             package_folder = os.path.dirname(package_path)
 
             for executable in root.findall(".//DTS:Executable", ns):
-                task_name = executable.get("{www.microsoft.com/SqlServer/Dts}ObjectName")
-                task_type = executable.get("{www.microsoft.com/SqlServer/Dts}Description", "")
-                container_name = None
-                ref_id = executable.get("{www.microsoft.com/SqlServer/Dts}refId")
-                if ref_id and "\\" in ref_id:
+                ref_id = executable.get("{www.microsoft.com/SqlServer/Dts}refId", "")
+                task_name = executable.get("{www.microsoft.com/SqlServer/Dts}ObjectName", "").strip()
+                task_type = executable.get("{www.microsoft.com/SqlServer/Dts}Description", "").strip()
+
+                # Skip if refId contains EventHandlers[OnError]
+                if "EventHandlers[OnError]" in ref_id:
+                    continue
+
+                # Skip if ObjectName is "PackageError"
+                if "PackageError" in task_name:
+                    continue
+
+                # Skip if the task name contains 'Sequence'
+                if "Sequence" in task_name:
+                    continue
+
+                # Extract container name if hierarchy is valid
+                container_name = ""
+                if ref_id.startswith("Package\\"):
                     parts = ref_id.split("\\")
-                    if len(parts) > 1:
-                        container_name = parts[1]
+                    if len(parts) >= 3:
+                        # e.g., Package\Foreach Loop Container\Archive Task
+                        container_name = parts[-2]  # second last part
+                    else:
+                        container_name = ""  # no container
 
                 # Initialize placeholders
                 task_sql_query = ""
@@ -505,17 +560,40 @@ class SSISPackageAnalyzer:
                 source_connection_name = ""
                 target_connection_name = ""
 
-                # Extract Expressions & SQL
+                # Extract Expressions and SQLQuery from DTS:PropertyExpression
                 for prop in executable.findall(".//DTS:PropertyExpression", ns):
-                    expressions.append(prop.text.strip() if prop.text else "")
-                    if "SqlCommand" in prop.attrib.get("{www.microsoft.com/SqlServer/Dts}Name", ""):
-                        task_sql_query = prop.text.strip()
+                    prop_name = prop.attrib.get("{www.microsoft.com/SqlServer/Dts}Name", "").strip()
+                    prop_value = prop.text.strip() if prop.text else ""
+                    prop_value = (
+                        prop_value.replace("&lt;", "<")
+                                  .replace("&gt;", ">")
+                                  .replace("&#xA;", "\n")
+                    )
+                    if prop_name or prop_value:
+                        expressions.append(f"Property: {prop_name}, Expression: {prop_value}")
+
+                    # If SQL Query not already extracted, set it here
+                    if not task_sql_query and "insert into packageError" not in prop_value.lower():
+                        task_sql_query = prop_value
+
+                # If still not found, check inside SQLTask
+                object_data = executable.find("DTS:ObjectData", ns)
+                if object_data is not None and not task_sql_query:
+                    sql_node = object_data.find("SQLTask:SqlTaskData", ns)
+                    if sql_node is not None:
+                        sql_text = sql_node.get("{www.microsoft.com/sqlserver/dts/tasks/sqltask}SqlStatementSource", "")
+                        if sql_text and "insert into packageError" not in sql_text.lower():
+                            task_sql_query = (
+                                sql_text.replace("&lt;", "<")
+                                        .replace("&gt;", ">")
+                                        .replace("&#xA;", "\n")
+                            )
 
                 # Extract Variables
                 for var in executable.findall(".//DTS:Variable", ns):
                     if var.get("{www.microsoft.com/SqlServer/Dts}Namespace") == "User":
                         var_name = var.get("{www.microsoft.com/SqlServer/Dts}ObjectName")
-                        var_value_elem = var.find("DTS:VariableValue", ns)
+                        ar_value_elem = var.find("DTS:VariableValue", ns)
                         var_value = var_value_elem.text if var_value_elem is not None else ""
                         variables.append(f"{var_name}: {var_value}")
 
@@ -544,26 +622,49 @@ class SSISPackageAnalyzer:
                 if open_rowset:
                     target_table = open_rowset[0].text
 
-                # Extract from SQLTask
-                sql_node = executable.find(".//SQLTask:SqlTaskData", ns)
-                if sql_node is not None:
-                    sql_text = sql_node.get("SQLTask:SqlStatementSource")
-                    if sql_text:
-                        # Extract schema names for source/target
-                        schema_parts = self.extract_schema_list(sql_text)
-                        if len(schema_parts) >= 2:
-                            target_connection_name = schema_parts[0]
-                            source_connection_name = schema_parts[1]
-                        task_connection_name = self.extract_schema_from_sql(sql_text)
+               
+                # Correctly extract TaskConnectionName from connection metadata
+                task_connection_name = self.extract_task_connection_name(executable, root, ns)
 
                 # ResultSetDetails
-                result_bind = executable.find(".//SQLTask:ResultBinding", ns)
-                if result_bind is not None:
-                    result_set_details = f"ResultName: {result_bind.get('SQLTask:ResultName')}, Var: {result_bind.get('SQLTask:DtsVariableName')}"
+                result_set_parts = []
+                sql_task_node = executable.find("DTS:ObjectData/SQLTask:SqlTaskData", ns)
+
+                if sql_task_node is not None:
+                    result_bindings = sql_task_node.findall("SQLTask:ResultBinding", ns)
+                    for result in result_bindings:
+                        result_name = result.attrib.get("{www.microsoft.com/sqlserver/dts/tasks/sqltask}ResultName", "").strip()
+                        variable_name = result.attrib.get("{www.microsoft.com/sqlserver/dts/tasks/sqltask}DtsVariableName", "").strip()
+                        if result_name and variable_name:
+                            result_set_parts.append(
+                                f"Result Set Column: {result_name} | SSIS Variable: {variable_name}"
+                            )
+                result_set_details = "\n".join(result_set_parts)
 
                 # TaskComponentDetails (cmd.exe)
-                if "cmd.exe" in (executable.attrib.get("{www.microsoft.com/SqlServer/Dts}ExecutableType", "") or "").lower():
-                    task_component_details = self.extract_cmd_details(executable)
+                executable_type = executable.attrib.get("{www.microsoft.com/SqlServer/Dts}ExecutableType", "")
+                object_data = executable.find("DTS:ObjectData", ns)
+
+                if executable_type.endswith("Task") and object_data is not None:
+                    # Case 1: ExecutePackageTask → extract only <PackageName> text
+                    exec_pkg = object_data.find("ExecutePackageTask")
+                    if exec_pkg is not None:
+                        pkg_name_tag = exec_pkg.find("PackageName")
+                        if pkg_name_tag is not None and pkg_name_tag.text:
+                            task_component_details = pkg_name_tag.text.strip()
+
+                    # Case 2: FileSystemTask → extract source and destination path
+                    fs_data = object_data.find("FileSystemData")
+                    if fs_data is not None:
+                        src_path = fs_data.attrib.get("TaskSourcePath", "").strip()
+                        dst_path = fs_data.attrib.get("TaskDestinationPath", "").strip()
+                        parts = []
+                        if src_path:
+                            parts.append(f"SourcePath: {src_path}")
+                        if dst_path:
+                            parts.append(f"DestinationPath: {dst_path}")
+                        task_component_details = " | ".join(parts)
+
 
                 details.append({
                     "PackageName": package_name,
@@ -592,7 +693,82 @@ class SSISPackageAnalyzer:
         except Exception as e:
             print(f"Error parsing {package_path}: {e}")
             return []
- 
+
+
+    def extract_package_container_details(self, package_path):
+        details = []
+        try:
+            tree = ET.parse(package_path)
+            root = tree.getroot()
+            ns = {'DTS': 'www.microsoft.com/SqlServer/Dts'}
+
+            package_name = os.path.basename(package_path)
+            package_folder = os.path.dirname(package_path)
+
+            for container in root.findall(".//DTS:Executable", ns):
+                exec_type = container.get("{www.microsoft.com/SqlServer/Dts}ExecutableType", "")
+
+                # Only interested in Sequence and ForeachLoop
+                if exec_type not in ("STOCK:SEQUENCE", "STOCK:FOREACHLOOP"):
+                    continue
+                
+                container_name = container.get("{www.microsoft.com/SqlServer/Dts}ObjectName", "")
+
+                # ContainerType from Description (remove " Container" and normalize casing)
+                raw_desc = container.get("{www.microsoft.com/SqlServer/Dts}Description", "")
+                if "Foreach" in raw_desc:
+                    container_type = "ForEachLoop"
+                elif "Sequence" in raw_desc:
+                    container_type = "Sequence"
+                else:
+                    container_type = ""
+
+                expression = ""
+                enumerator = ""
+
+                # Extract only if <DTS:ForEachEnumerator> exists
+                for_each_enum = container.find(".//DTS:ForEachEnumerator", ns)
+                if for_each_enum is not None:
+                    # Extract PropertyExpression for expression
+                    prop_expr = for_each_enum.find(".//DTS:PropertyExpression", ns)
+                    if prop_expr is not None:
+                        expr_name = prop_expr.get("{www.microsoft.com/SqlServer/Dts}Name", "")
+                        expr_value = prop_expr.text.strip() if prop_expr.text else ""
+                        expression = f"Property : {expr_name}, Expression : {expr_value}"
+
+                    # Extract enumerator details
+                    enum_parts = []
+                    dir_expr = for_each_enum.find(".//DTS:PropertyExpression", ns)
+                    if dir_expr is not None:
+                        dir_value = dir_expr.text.strip() if dir_expr.text else ""
+                        enum_parts.append(f"EnumeratorName : Directory, EnumeratorValue: {dir_value}")
+
+                    # Then extract from ForEachFileEnumeratorProperties
+                    fefe_props = for_each_enum.find(".//ForEachFileEnumeratorProperties")
+                    if fefe_props is not None:
+                        for fefe in fefe_props.findall(".//FEFEProperty"):
+                            for key, val in fefe.attrib.items():
+                                enum_name = key
+                                enum_value = "True" if key == "Recurse" and val == "1" else val
+                                enum_parts.append(f"EnumeratorName : {enum_name}, EnumeratorValue: {enum_value}")
+                        
+                    enumerator = " | ".join(enum_parts)
+
+                details.append({
+                    "PackageName": package_name,
+                    "PackagePath": package_folder,
+                    "ContainerName": container_name,
+                    "ContainerType": container_type,
+                    "ContainerExpression": expression,
+                    "ContainerEnum": enumerator
+                    })
+
+            return details
+
+        except Exception as e:
+            print(f"Error extracting PackageContainerDetails from {package_path}: {e}")
+            return []
+
     # Helper: Extract schema names from SQL
     @staticmethod
     def extract_schema_list(sql_text):
@@ -688,7 +864,7 @@ class SSISPackageAnalyzer:
 
                     # Handle EventHandlerName
                     if len(parts) == 1 and ".EventHandlers" in parts[0]:
-                        # event_handler_name = parts[0].split(".EventHandlers")[0]
+                        event_handler_name = parts[0].split(".EventHandlers")[0]
                     elif len(parts) >= 2 and ".EventHandlers" in parts[-1]:
                         event_handler_name = parts[-2]
 
@@ -2434,6 +2610,18 @@ class SSISPackageAnalyzer:
         else:
             self.save_package_task_metadata(metadata, self.PackageDetailsFilePath)
 
+            # Save container details separately
+            container_metadata = [{
+                "PackageName": self.PackageName,
+                "PackagePath": self.PackagePath,
+                "ContainerName": container_name,
+                "ContainerType": container_type,
+                "ContainerExpression": container_expression,
+                "ContainerEnum": enum_details
+            }]
+            self.save_package_container_metadata(container_metadata, self.PackageDetailsFilePath)
+
+
         return metadata.ExtractTaskDetails
 
 
@@ -2901,39 +3089,6 @@ class SSISPackageAnalyzer:
                         wb.save(file_path)
                         format_excel_file(file_path)
 
-                if task.get("ContainerName"):
-                    wb = load_workbook(file_path) if os.path.exists(file_path) else Workbook()
-                    if not wb.sheetnames:
-                        wb.remove(wb.active)
-                    sheet_name = "PackageContainerDetails"
-                    if sheet_name in wb.sheetnames:
-                        ws = wb[sheet_name]
-                    else:
-                        ws = wb.create_sheet(sheet_name)
-                        ws.append([
-                            "PackageName", "PackagePath", "ContainerName",
-                            "ContainerType", "ContainerExpressions", "ContainerEnumerator"
-                        ])
-
-                    rows = list(ws.iter_rows(min_row=2, values_only=True))
-                    record_exists = any(
-                        row[0] == task.get("PackageName") and
-                        row[1] == task.get("PackagePath") and
-                        row[2] == task.get("ContainerName") and
-                        row[3] == task.get("ContainerType") and
-                        row[4] == task.get("ContainerExpression") and
-                        row[5] == task.get("ContainerEnum")
-                        for row in rows
-                    )
-
-                    if not record_exists:
-                        ws.append([
-                            task.get("PackageName"), task.get("PackagePath"), task.get("ContainerName"),
-                            task.get("ContainerType"), task.get("ContainerExpression"), task.get("ContainerEnum")
-                        ])
-                        wb.save(file_path)
-                        format_excel_file(file_path)
-
 
         elif self.DataSaveType.upper() == "SQL":
             conn = pyodbc.connect(self._connection_string)
@@ -2967,32 +3122,80 @@ class SSISPackageAnalyzer:
                     ]
                     cursor.execute(task_query, values)
 
-                if task.get("ContainerName"):
-                    container_query = """
-                        INSERT INTO PackageContainerDetails (
-                            PackageName, ContainerName, ContainerType,
-                            ContainerExpressions, ContainerEnumerator, PackagePath
-                        )
-                        SELECT ?, ?, ?, ?, ?, ?
-                        WHERE NOT EXISTS (
-                            SELECT 1 FROM PackageContainerDetails
-                            WHERE ContainerName = ? AND ContainerType = ? AND PackageName = ?
-                            AND PackagePath = ? AND ContainerExpressions = ISNULL(?, '')
-                            AND ContainerEnumerator = ISNULL(?, '')
-                        )
-                    """
-                    values = [
-                        task.get("PackageName"), task.get("ContainerName"), task.get("ContainerType"),
-                        task.get("ContainerExpression"), task.get("ContainerEnum"), task.get("PackagePath"),
-                        task.get("ContainerName"), task.get("ContainerType"), task.get("PackageName"),
-                        task.get("PackagePath"), task.get("ContainerExpression"), task.get("ContainerEnum")
-                    ]
-                    cursor.execute(container_query, values)
+            conn.commit()
+            cursor.close()
+            conn.close()
+            print("Saved Package Task details to SQL Server.")
+
+    def save_package_container_metadata(self, containers, file_path):
+        if self.DataSaveType.upper() == "EXCEL":
+            workbook_exists = os.path.exists(file_path)
+
+            for container in containers:
+                wb = load_workbook(file_path) if workbook_exists else Workbook()
+                if not wb.sheetnames:
+                    wb.remove(wb.active)
+
+                sheet_name = "PackageContainerDetails"
+                if sheet_name in wb.sheetnames:
+                    ws = wb[sheet_name]
+                else:
+                    ws = wb.create_sheet(sheet_name)
+                    ws.append([
+                        "PackageName", "PackagePath", "ContainerName",
+                        "ContainerType", "ContainerExpressions", "ContainerEnumerator"
+                    ])
+
+                rows = list(ws.iter_rows(min_row=2, values_only=True))
+                record_exists = any(
+                    row[0] == container.get("PackageName") and
+                    row[1] == container.get("PackagePath") and
+                    row[2] == container.get("ContainerName") and
+                    row[3] == container.get("ContainerType") and
+                    row[4] == container.get("ContainerExpression") and
+                    row[5] == container.get("ContainerEnum")
+                    for row in rows
+                )
+
+                if not record_exists:
+                    ws.append([
+                        container.get("PackageName"), container.get("PackagePath"), container.get("ContainerName"),
+                        container.get("ContainerType"), container.get("ContainerExpression"), container.get("ContainerEnum")
+                    ])
+                    wb.save(file_path)
+                    format_excel_file(file_path)
+
+        elif self.DataSaveType.upper() == "SQL":
+            conn = pyodbc.connect(self._connection_string)
+            cursor = conn.cursor()
+
+            for container in containers:
+                container_query = """
+                    INSERT INTO PackageContainerDetails (
+                        PackageName, ContainerName, ContainerType,
+                        ContainerExpressions, ContainerEnumerator, PackagePath
+                    )
+                    SELECT ?, ?, ?, ?, ?, ?
+                    WHERE NOT EXISTS (
+                        SELECT 1 FROM PackageContainerDetails
+                        WHERE ContainerName = ? AND ContainerType = ? AND PackageName = ?
+                        AND PackagePath = ? AND ContainerExpressions = ISNULL(?, '')
+                        AND ContainerEnumerator = ISNULL(?, '')
+                    )
+                """
+                values = [
+                    container.get("PackageName"), container.get("ContainerName"), container.get("ContainerType"),
+                    container.get("ContainerExpression"), container.get("ContainerEnum"), container.get("PackagePath"),
+                    container.get("ContainerName"), container.get("ContainerType"), container.get("PackageName"),
+                    container.get("PackagePath"), container.get("ContainerExpression"), container.get("ContainerEnum")
+                ]
+                cursor.execute(container_query, values)
 
             conn.commit()
             cursor.close()
             conn.close()
-            print("Saved Package Task and Container metadata to SQL Server.")
+            print("Saved Package Container metadata to SQL Server.")       
+
 
     def save_project_parameter_metadata(self, result, file_path):
         if self.DataSaveType.upper() == "EXCEL":
