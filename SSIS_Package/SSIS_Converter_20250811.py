@@ -527,7 +527,7 @@ class SSISPackageAnalyzer:
                     continue
 
                 # Skip if ObjectName is "PackageError"
-                if "PackageError" in task_name:
+                if task_name in ("PackageError","Foreach Loop Container"):
                     continue
 
                 # Skip if the task name contains 'Sequence'
@@ -569,6 +569,12 @@ class SSISPackageAnalyzer:
                                   .replace("&gt;", ">")
                                   .replace("&#xA;", "\n")
                     )
+
+                    # Only consider if property is SqlStatementSource and not a package error
+                    if prop_name == "SqlStatementSource":
+                        continue
+
+                    # Add to expressions only if not SqlStatementSource
                     if prop_name or prop_value:
                         expressions.append(f"Property: {prop_name}, Expression: {prop_value}")
 
