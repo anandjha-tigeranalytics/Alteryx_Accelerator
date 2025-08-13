@@ -592,22 +592,37 @@ class SSISPackageAnalyzer:
                                         break
                     
 
-                # Extract Variables
-                for var in executable.findall(".//DTS:Variable", ns):
-                    if var.get("{www.microsoft.com/SqlServer/Dts}Namespace") == "User":
-                        var_name = var.get("{www.microsoft.com/SqlServer/Dts}ObjectName")
-                        ar_value_elem = var.find("DTS:VariableValue", ns)
-                        var_value = var_value_elem.text if var_value_elem is not None else ""
-                        variables.append(f"{var_name}: {var_value}")
+                # Extract Variables (from FileSystemData under ObjectData)
+                object_data = executable.find("DTS:ObjectData", ns)
+                if object_data is not None:
+                    file_system_data = object_data.find("FileSystemData")
+                    if file_system_data is not None:
+                        # Extract TaskSourcePath if it's marked as a variable
+                        if file_system_data.attrib.get("TaskIsSourceVariable", "").lower() == "true":
+                            source_path_var = file_system_data.attrib.get("TaskSourcePath", "").strip()
+                            if source_path_var:
+                                variables.append(f"Source Path: {source_path_var}")
 
-                # Extract Parameters
-                for param in executable.findall(".//DTS:Parameter", ns):
-                    name = param.get("DTS:ObjectName")
-                    dtype = param.get("DTS:DataType")
-                    direction = param.get("DTS:ParameterDirectionKind")
-                    value = param.find("DTS:Property", ns)
-                    value_text = value.text if value is not None else ""
-                    parameters.append(f"Name: {name}, Type: {direction}, DataType: {dtype}, Value: {value_text}")
+                        # Extract TaskDestinationPath if it's marked as a variable
+                        if file_system_data.attrib.get("TaskIsDestinationVariable", "").lower() == "true":
+                            dest_path_var = file_system_data.attrib.get("TaskDestinationPath", "").strip()
+                            if dest_path_var:
+                                variables.append(f"Destination Path: {dest_path_var}")
+
+                # Extract Parameters (from SQLTask:ParameterBinding inside SQLTask:SqlTaskData)
+                if object_data is not None:
+                    sql_task_node = object_data.find("SQLTask:SqlTaskData", ns)
+                    if sql_task_node is not None:
+                        for param_binding in sql_task_node.findall("SQLTask:ParameterBinding", ns):
+                            param_name = param_binding.get("{www.microsoft.com/sqlserver/dts/tasks/sqltask}ParameterName", "")
+                            direction = param_binding.get("{www.microsoft.com/sqlserver/dts/tasks/sqltask}ParameterDirection", "")
+                            data_type = param_binding.get("{www.microsoft.com/sqlserver/dts/tasks/sqltask}DataType", "")
+                            dts_variable = param_binding.get("{www.microsoft.com/sqlserver/dts/tasks/sqltask}DtsVariableName", "")
+
+                            parameters.append(
+                                f"Name: {param_name}, Type: {direction}, DataType: {data_type}, Value: , DtsVariableName: {dts_variable}"
+                            )
+
 
                 # Extract DataFlow components
                 for component in executable.findall(".//component"):
