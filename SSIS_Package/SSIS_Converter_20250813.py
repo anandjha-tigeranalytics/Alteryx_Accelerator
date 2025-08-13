@@ -3060,9 +3060,9 @@ class SSISPackageAnalyzer:
                         ws.append([
                             "PackageName", "PackagePath", "TaskName", "TaskType", "ContainerName",
                             "TaskConnectionName", "SqlQuery", "Variables", "Parameters", "Expressions",
-                            "DataFlowDaskSourceName", "DataFlowTaskSourceType", "DataFlowTaskTargetName",
-                            "DataFlowTaskTargetType", "DataFlowTaskTargetTable", "DataFlowDaskSourceConnectionName",
-                            "DataFlowDaskTargetConnectionName", "ResultSetDetails", "TaskComponentDetails"
+                            "DataFlowTaskSourceName", "DataFlowTaskSourceType", "DataFlowTaskTargetName",
+                            "DataFlowTaskTargetType", "DataFlowTaskTargetTable", "DataFlowTaskSourceConnectionName",
+                            "DataFlowTaskTargetConnectionName", "ResultSetDetails", "TaskComponentDetails"
                         ])
 
                     rows = list(ws.iter_rows(min_row=2, values_only=True))
@@ -3077,13 +3077,25 @@ class SSISPackageAnalyzer:
 
                     if not record_exists:
                         ws.append([
-                            task.get("PackageName"), task.get("PackagePath"), task.get("TaskName"),
-                            task.get("TaskType"), task.get("ContainerName"), task.get("TaskConnectionName"),
-                            task.get("TaskSqlQuery"), task.get("Variables"), task.get("Parameters"),
-                            task.get("Expressions"), task.get("SourceComponent"), task.get("SourceType"),
-                            task.get("TargetComponent"), task.get("TargetType"), task.get("TargetTable"),
-                            task.get("SourceConnectionName"), task.get("TargetConnectionName"),
-                            task.get("ResultSetDetails"), task.get("TaskComponentDetails")
+                            task.get("PackageName"), 
+                            task.get("PackagePath"), 
+                            task.get("TaskName"),
+                            task.get("TaskType"), 
+                            task.get("ContainerName"), 
+                            task.get("TaskConnectionName"),
+                            task.get("TaskSqlQuery"), 
+                            task.get("Variables"), 
+                            task.get("Parameters"),
+                            task.get("Expressions"), 
+                            task.get("SourceComponent"), 
+                            task.get("SourceType"),
+                            task.get("TargetComponent"), 
+                            task.get("TargetType"), 
+                            task.get("TargetTable"),
+                            task.get("SourceConnectionName"),
+                            task.get("TargetConnectionName"),
+                            task.get("ResultSetDetails"),
+                            task.get("TaskComponentDetails")
                         ])
                         wb.save(file_path)
                         format_excel_file(file_path)
@@ -3110,14 +3122,29 @@ class SSISPackageAnalyzer:
                         )
                     """
                     values = [
-                        task.get("PackageName"), task.get("TaskName"), task.get("TaskType"),
-                        task.get("TaskSqlQuery"), task.get("ContainerName"), task.get("PackagePath"),
-                        task.get("Variables"), task.get("Parameters"), task.get("Expressions"),
-                        task.get("SourceComponent"), task.get("SourceType"), task.get("TargetComponent"),
-                        task.get("TargetType"), task.get("TargetTable"), task.get("ResultSetDetails"),
-                        task.get("SourceConnectionName"), task.get("TargetConnectionName"),
-                        task.get("ConnectionName"), task.get("TaskComponentDetails"),
-                        task.get("ContainerName"), task.get("PackageName"), task.get("PackagePath"), task.get("TaskName")
+                        task.get("PackageName"),
+                        task.get("TaskName"),
+                        task.get("TaskType"),
+                        task.get("TaskSqlQuery"),
+                        task.get("ContainerName"),
+                        task.get("PackagePath"),
+                        task.get("Variables"), 
+                        task.get("Parameters"), 
+                        task.get("Expressions"),
+                        task.get("SourceComponent"), 
+                        task.get("SourceType"), 
+                        task.get("TargetComponent"),
+                        task.get("TargetType"), 
+                        task.get("TargetTable"), 
+                        task.get("ResultSetDetails"),
+                        task.get("SourceConnectionName"), 
+                        task.get("TargetConnectionName"),
+                        task.get("ConnectionName"), 
+                        task.get("TaskComponentDetails"),
+                        task.get("ContainerName"), 
+                        task.get("PackageName"), 
+                        task.get("PackagePath"), 
+                        task.get("TaskName")
                     ]
                     cursor.execute(task_query, values)
 
@@ -3158,8 +3185,12 @@ class SSISPackageAnalyzer:
 
                 if not record_exists:
                     ws.append([
-                        container.get("PackageName"), container.get("PackagePath"), container.get("ContainerName"),
-                        container.get("ContainerType"), container.get("ContainerExpression"), container.get("ContainerEnum")
+                        container.get("PackageName"), 
+                        container.get("PackagePath"), 
+                        container.get("ContainerName"),
+                        container.get("ContainerType"), 
+                        container.get("ContainerExpression"), 
+                        container.get("ContainerEnum")
                     ])
                     wb.save(file_path)
                     format_excel_file(file_path)
@@ -3183,10 +3214,18 @@ class SSISPackageAnalyzer:
                     )
                 """
                 values = [
-                    container.get("PackageName"), container.get("ContainerName"), container.get("ContainerType"),
-                    container.get("ContainerExpression"), container.get("ContainerEnum"), container.get("PackagePath"),
-                    container.get("ContainerName"), container.get("ContainerType"), container.get("PackageName"),
-                    container.get("PackagePath"), container.get("ContainerExpression"), container.get("ContainerEnum")
+                    container.get("PackageName"), 
+                    container.get("ContainerName"), 
+                    container.get("ContainerType"),
+                    container.get("ContainerExpression"), 
+                    container.get("ContainerEnum"), 
+                    container.get("PackagePath"),
+                    container.get("ContainerName"), 
+                    container.get("ContainerType"), 
+                    container.get("PackageName"),
+                    container.get("PackagePath"), 
+                    container.get("ContainerExpression"), 
+                    container.get("ContainerEnum")
                 ]
                 cursor.execute(container_query, values)
 
