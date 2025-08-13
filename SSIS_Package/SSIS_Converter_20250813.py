@@ -625,15 +625,34 @@ class SSISPackageAnalyzer:
 
 
                 # Extract DataFlow components
-                for component in executable.findall(".//component"):
-                    comp_name = component.get("name", "")
-                    comp_desc = component.get("description", "")
-                    if "Source" in comp_desc:
-                        source_component = comp_name
-                        source_type = comp_desc
-                    elif "Destination" in comp_desc:
-                        target_component = comp_name
-                        target_type = comp_desc
+                # DataFlowTask Connection Names
+                source_conn_name = ""
+                target_conn_name = ""
+                
+                if object_data is not None:
+                    pipeline = object_data.find("pipeline")
+                    if pipeline is not None:
+                        for component in pipeline.findall(".//component"):
+                            desc = component.get("description", "").lower()
+                            connections = component.find("connections")
+                            if connections is not None:
+                                for conn in connections.findall("connection"):
+                                    ref_id = conn.get("connectionManagerRefId", "")
+                                    if not ref_id:
+                                        continue
+                                    conn_clean = ref_id.split("[")[-1].replace("]", "").strip()
+
+                                    # Match Source
+                                    if any(x in desc for x in ["ole db source", "flat file source", "odbc source"]):
+                                        source_conn_name = conn_clean
+                                    # Match Target
+                                    elif any(x in desc for x in ["ole db destination", "flat file destination", "odbc destination"]):
+                                        target_conn_name = conn_clean
+
+                # Assign values to output fields
+                source_connection_name = source_conn_name
+                target_connection_name = target_conn_name
+
 
                 # Target Table from OpenRowSet
                 open_rowset = executable.findall(".//property[@name='OpenRowset']")
