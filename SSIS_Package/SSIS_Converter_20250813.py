@@ -577,7 +577,7 @@ class SSISPackageAnalyzer:
                         task_connection_guid = raw_conn_id.strip().replace("{", "").replace("}", "")
 
                         if task_connection_guid:
-                            print(f"[DEBUG] Searching for connections for Task: {task_name}, GUID: {task_connection_guid}")
+                            # print(f"[DEBUG] Searching for connections for Task: {task_name}, GUID: {task_connection_guid}")
                             all_conn_nodes = root.findall(".//connection")
                             for conn_node in all_conn_nodes:
                                 conn_mgr_id = conn_node.attrib.get("connectionManagerID", "")
@@ -588,7 +588,7 @@ class SSISPackageAnalyzer:
                                     # Final connection name comes from connectionManagerRefId
                                     if conn_ref_id.startswith("Project.ConnectionManagers[") and conn_ref_id.endswith("]"):
                                         task_connection_name = conn_ref_id.split("[")[1].replace("]", "")
-                                        print(f"[DEBUG] Found connection for {task_name} -> {task_connection_name}")
+                                        # print(f"[DEBUG] Found connection for {task_name} -> {task_connection_name}")
                                         break
                     
 
