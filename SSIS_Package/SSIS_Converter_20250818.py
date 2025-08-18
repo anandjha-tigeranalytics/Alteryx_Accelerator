@@ -1393,36 +1393,41 @@ class SSISPackageAnalyzer:
 
     def count_package_connections(self, package):
         """
-        Extracts all the connection metadata from a given SSIS package and returns a list of ConnectionInfo objects.
+        Extracts all the connection metadata from a given SSIS package (.dtsx) and returns a list of connection info.
+        This version also extracts deeply nested <connection> tags under <components>.
         """
         connection_managers = []
         namespace = {'DTS': 'www.microsoft.com/SqlServer/Dts'}
         connection_data = []
         
         def recurse_connections(element):
+            # Standard DTS connection managers
             for conn_mgrs in element.findall('DTS:ConnectionManagers', namespace):
                 for conn in conn_mgrs.findall('DTS:ConnectionManager', namespace):
                     conn_name = conn.attrib.get('{www.microsoft.com/SqlServer/Dts}ObjectName')
                     conn_type = conn.attrib.get('{www.microsoft.com/SqlServer/Dts}CreationName')
                     conn_id = conn.attrib.get('{www.microsoft.com/SqlServer/Dts}DTSID')
 
+                    # Extract property expressions
+                    conn_exprs = []
+                    for expr_node in conn.findall('DTS:PropertyExpression', namespace):
+                        expr_name = expr_node.attrib.get('{www.microsoft.com/SqlServer/Dts}Name', '').strip()
+                        expr_value = expr_node.text.strip() if expr_node.text else ''
+                        if expr_name and expr_value:
+                            conn_exprs.append(f"{expr_name}: {expr_value}")
+
                     # Find connection string inside nested ObjectData/ConnectionManager
                     conn_string = ""
-                    conn_exprs = {}
-
                     object_data = conn.find('DTS:ObjectData', namespace)
                     if object_data is not None:
                         inner_conn = object_data.find('DTS:ConnectionManager', namespace)
                         if inner_conn is not None:
                             conn_string = inner_conn.attrib.get('{www.microsoft.com/SqlServer/Dts}ConnectionString', '')
 
-                            # You can extract expressions here if available in XML
-                            # Example placeholder: conn_exprs = extract_expressions(inner_conn)
-
                     connection_data.append({
                         "ConnectionName": conn_name,
                         "ConnectionString": conn_string,
-                        "ConnectionExpressions": conn_exprs,
+                        "ConnectionExpressions": "; ".join(conn_exprs),
                         "ConnectionType": conn_type,
                         "ConnectionID": conn_id,
                         "IsProjectConnection": "0"
