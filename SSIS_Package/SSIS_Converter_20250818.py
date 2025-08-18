@@ -505,6 +505,10 @@ class SSISPackageAnalyzer:
                 if "Sequence" in task_name:
                     continue
 
+                # Skip if the task name contains 'Sequence'
+                if "Sequence" in task_type:
+                    continue
+
                 # Extract container name if hierarchy is valid
                 container_name = ""
                 if ref_id.startswith("Package\\"):
@@ -1163,9 +1167,9 @@ class SSISPackageAnalyzer:
         result.CreatedDate = package.creation_date
         result.CreatedBy = package.creator_name
         result.ExecutionTime = self.measure_package_performance(package)
-        result.Tasks = self.count_package_tasks(package)
+        result.Tasks = self.count_package_tasks(package_path)
         result.Connections = self.count_package_connections(package)
-        result.Containers = self.count_sequence_container(package) #self.count_package_containers(package)
+        result.Containers = self.count_sequence_container(package_path) #self.count_package_containers(package)
         result.DTSXXML = ET.tostring(package.root, encoding="unicode")
         # result.Variables = self.get_package_variables(package)
 
@@ -1359,37 +1363,71 @@ class SSISPackageAnalyzer:
 
             return count
                                                                             
-    def count_package_tasks(self, package):
+    def count_package_tasks(self, package_path):
         """
-        Recursively count only Execute SQL and Execute Package tasks (exclude containers and Data Flow tasks).
+        Count all task elements in a DTSX package, applying the same filters used in extract_package_task_details.
         """
-        namespace = {'DTS': 'www.microsoft.com/SqlServer/Dts'}
-        total_count = 0
-        req_creation_name = ["Microsoft.ExecuteSQLTask", "Microsoft.ExecutePackageTask"]
-        if package.root is not None:
-            # Start only from the top-level Executables ONCE
-            top_executables = package.root.find('DTS:Executables', namespace)
-            if top_executables is not None:
-                for executable in top_executables.findall('DTS:Executable', namespace):
-                    total_count += self.recursive_count(executable,req_creation_name)
+        try:
+            tree = ET.parse(package_path)
+            root = tree.getroot()
+            ns = {'DTS': 'www.microsoft.com/SqlServer/Dts'}
 
-        return total_count
+            task_names_list = [] # for keeping all the tasks name
+
+            for executable in root.findall(".//DTS:Executable", ns):
+                ref_id = executable.get("{www.microsoft.com/SqlServer/Dts}refId", "")
+                task_name = executable.get("{www.microsoft.com/SqlServer/Dts}ObjectName", "").strip()
+                task_type = executable.get("{www.microsoft.com/SqlServer/Dts}Description", "").strip()
+
+                # Apply same filtering logic used in extract_package_task_details
+                if "EventHandlers[OnError]" in ref_id:
+                    continue
+                if task_name in ("PackageError", "Foreach Loop Container"):
+                    continue
+                if "Sequence" in task_name or "Sequence" in task_type:
+                    continue
+
+                # Add only valid task names to set (for distinct count)
+                if task_name:
+                    task_names_list.append(task_name)
+
+            return len(task_names_list)
+
+        except Exception as e:
+            print(f"[ERROR] Failed to count tasks in {package_path}: {e}")
+            return 0
+
     
-    def count_sequence_container(self, package):
+    def count_sequence_container(self, package_path):
         """
-        Recursively count only Execute SQL and Execute Package tasks (exclude containers and Data Flow tasks).
+        Count all container elements in a DTSX package, applying the same filters used in extract_container_task_details.
         """
-        namespace = {'DTS': 'www.microsoft.com/SqlServer/Dts'}
-        total_count = 0
-        req_creation_name = ["STOCK:SEQUENCE"]
-        if package.root is not None:
-            # Start only from the top-level Executables ONCE
-            top_executables = package.root.find('DTS:Executables', namespace)
-            if top_executables is not None:
-                for executable in top_executables.findall('DTS:Executable', namespace):
-                    total_count += self.recursive_count(executable,req_creation_name)
+        try:
+            tree = ET.parse(package_path)
+            root = tree.getroot()
+            ns = {'DTS': 'www.microsoft.com/SqlServer/Dts'}
 
-        return total_count
+            container_names_set = set()
+
+            for container in root.findall(".//DTS:Executable", ns):
+                exec_type = container.get("{www.microsoft.com/SqlServer/Dts}ExecutableType", "")
+
+                # Only interested in Sequence and ForeachLoop
+                if exec_type not in ("STOCK:SEQUENCE", "STOCK:FOREACHLOOP"):
+                    continue
+                
+                container_name = container.get("{www.microsoft.com/SqlServer/Dts}ObjectName", "")
+
+                # Add only valid container names to set (for distinct count)
+                if container_name:
+                    container_names_set.add(container_name)
+
+            return len(container_names_set)
+        
+        except Exception as e:
+            print(f"[ERROR] Failed to count container in {package_path}: {e}")
+            return 0
+
 
     def count_package_connections(self, package):
         """
