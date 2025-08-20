@@ -1773,7 +1773,7 @@ class SSISPackageAnalyzer:
                 from_task = from_full.split("\\")[-1] if from_full else ""
                 to_task = to_full.split("\\")[-1] if to_full else ""
 
-                # container_name = from_full.split("\\")[1] if len(from_full.split("\\")) >= 3 else ""
+                container_name = ""
                 if ".PrecedenceConstraints[" in ref_id:
                     parts = ref_id.split("\\")
                     if len(parts) >= 2:
